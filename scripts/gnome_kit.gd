@@ -18,6 +18,7 @@ static func decorate(model: Node3D) -> void:
 	var att := ModelUtil.bone_attach(model, ["Head", "mixamorig:Head", "head"])
 	if att == null:
 		return
+	att.name = "GnomeHat"
 	# Компенсируем РЕАЛЬНЫЙ масштаб кости, а не rest-оценку из bone_attach:
 	# у glTF-скелета кость Head приходит с масштабом ~77 (100 см/м × масштаб
 	# модели), и get_bone_global_rest() её недооценивает.
