@@ -30,6 +30,7 @@ var boss_name: Label
 var fade_rect: ColorRect
 var damage_rect: ColorRect
 var pause_root: Control
+var settings_root: Control
 var death_root: Control
 var typing := false
 var waiting_advance := false
@@ -275,7 +276,8 @@ func _build() -> void:
 	pause_root.add_child(pt)
 	_pause_button("Продолжить", 160, func(): toggle_pause(false))
 	_pause_button("Начать заново", 194, func(): restart_requested.emit())
-	_pause_button("В главное меню", 228, func(): menu_requested.emit())
+	_pause_button("Настройки", 228, _open_settings)
+	_pause_button("В главное меню", 262, func(): menu_requested.emit())
 
 	# --- смерть ---
 	death_root = Control.new()
@@ -325,6 +327,19 @@ func _pause_button(text: String, y: float, action: Callable) -> void:
 	b.flat = true
 	b.pressed.connect(action)
 	pause_root.add_child(b)
+
+
+## Экран настроек поверх паузы: HUD растянут ×2, поэтому компенсируем масштаб.
+func _open_settings() -> void:
+	if settings_root != null and is_instance_valid(settings_root):
+		return
+	var s: Control = load("res://scripts/settings_screen.gd").new()
+	s.scale = Vector2(0.5, 0.5)
+	s.closed.connect(func():
+		settings_root = null
+		s.queue_free())
+	add_child(s)
+	settings_root = s
 
 
 func _refresh_stats() -> void:
@@ -400,6 +415,7 @@ func say(entries: Array) -> void:
 			text_label.size = Vector2(462, 70)
 			speaker_label.position = Vector2(128, 250)
 		text_label.text = data.get("text", "")
+		Voice.play_for(String(data.get("text", "")))
 		text_label.visible_characters = 0
 		typing = true
 		if auto:

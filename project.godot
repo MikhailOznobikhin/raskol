@@ -13,6 +13,8 @@ boot_splash/show_image=false
 GameState="*res://scripts/game_state.gd"
 Art="*res://scripts/art.gd"
 Sfx="*res://scripts/sfx.gd"
+Voice="*res://scripts/voice.gd"
+Settings="*res://scripts/settings.gd"
 
 [display]
 
