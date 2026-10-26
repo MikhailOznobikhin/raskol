@@ -5,6 +5,7 @@ class_name Hero3D
 
 const SPEED: float = Balance.HERO_SPEED
 const RUN: float = Balance.HERO_RUN
+const CROUCH: float = Balance.HERO_CROUCH
 const ACCEL := Balance.HERO_ACCEL
 const DODGE_SPEED: float = Balance.HERO_DODGE_SPEED
 const DODGE_TIME: float = Balance.HERO_DODGE_TIME
@@ -19,6 +20,11 @@ var attack_done := false
 var invuln := 0.0
 var dead := false
 var control_enabled := true
+var crouching := false
+var distract_cd := 0.0
+var spike_cd := 0.0
+var dodge_dir := Vector3.ZERO
+var turn_rate := 0.0
 
 var rig: Node3D
 var hips: Node3D
@@ -47,6 +53,11 @@ var mat_hair: StandardMaterial3D
 var mat_leather: StandardMaterial3D
 var mat_cloth_dark: StandardMaterial3D
 var mat_metal_dark: StandardMaterial3D
+
+var use_model := false
+var model_root: Node3D
+var weapon_model: Node3D
+var anim: AnimationPlayer
 
 signal died
 
@@ -227,6 +238,45 @@ func _build_rig() -> void:
 	_box(shin_r, Vector3(0.21, 0.14, 0.34), Vector3(0, -0.36, 0.05), mat_leather)
 
 	_add_blob_shadow(0.55)
+	_attach_model()
+
+
+## Надевает glTF-модель гнома на риг и вешает молот в правую кисть.
+## Если модель не загрузилась — остаются примитивы (игра не ломается).
+func _attach_model() -> void:
+	ModelUtil.hide_meshes(rig)
+	var model := ModelUtil.spawn(rig, "res://assets/player.glb", Balance.HERO_MODEL_HEIGHT)
+	if model == null:
+		ModelUtil.show_meshes(rig)
+		return
+	use_model = true
+	model_root = model
+	anim = ModelUtil.find_anim_player(model)
+	_attach_weapon(model)
+	# CC0-модели гнома с этим ригом нет, поэтому шляпу лепим поверх Head
+	GnomeKit.decorate(model)
+	if anim != null:
+		ModelUtil.play_key(anim, ["Idle"], true)
+
+
+func _attach_weapon(model: Node3D) -> void:
+	var att := ModelUtil.bone_attach(model, ["Wrist.R", "mixamorig_RightHand", "RightHand"])
+	if att == null:
+		return
+	var grip := Node3D.new()
+	att.add_child(grip)
+	# кости glTF приходят с масштабом ~100 (сантиметры): без компенсации
+	# молот получается стометровым и накрывает камеру
+	var ws: Vector3 = att.global_transform.basis.get_scale()
+	if ws.x > 0.0001 and ws.y > 0.0001 and ws.z > 0.0001:
+		grip.scale = Vector3(1.0 / ws.x, 1.0 / ws.y, 1.0 / ws.z)
+	var tool := ModelUtil.spawn(grip, "res://assets/weapon_hammer.glb", 0.56, 0.0)
+	if tool == null:
+		return
+	# молот висит головой вниз, как на поясе: +Y модели смотрит по кости вниз
+	tool.rotation_degrees = Vector3(0, 0, 0)
+	tool.position = Vector3.ZERO
+	weapon_model = tool
 
 
 func _add_blob_shadow(radius: float) -> void:
@@ -256,9 +306,178 @@ func _add_blob_shadow(radius: float) -> void:
 	add_child(mi)
 
 
+func is_crouching() -> bool:
+	return crouching
+
+
+## Множитель заметности: крадущийся шаг тише и незаметнее, бег — наоборот.
+func visibility_mult() -> float:
+	if crouching:
+		return 0.6
+	if Vector2(velocity.x, velocity.z).length() > SPEED + 0.3:
+		return 1.4
+	return 1.0
+
+
+func noise_radius() -> float:
+	if crouching:
+		return Balance.NOISE_CROUCH
+	var sp := Vector2(velocity.x, velocity.z).length()
+	if sp > SPEED + 0.3:
+		return Balance.NOISE_RUN
+	if sp > 0.4:
+		return Balance.NOISE_WALK
+	return 0.0
+
+
+## Событие шума: стража слышит его в радиусе и идёт проверять точку.
+func emit_noise_at(pos: Vector3, radius: float) -> void:
+	if radius <= 0.0:
+		return
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e != null and is_instance_valid(e) and e.has_method("hear_noise"):
+			e.hear_noise(pos, radius)
+
+
+func emit_noise(radius: float) -> void:
+	emit_noise_at(global_position, radius)
+
+
+func _throw_stone() -> void:
+	distract_cd = Balance.DISTRACT_CD
+	var fwd := -rig.global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length() < 0.05:
+		fwd = Vector3(0, 0, 1)
+	fwd = fwd.normalized()
+	var start: Vector3 = global_position + Vector3(0, 1.2, 0) + fwd * 0.6
+	var land: Vector3 = start + fwd * 8.0
+	var q := PhysicsRayQueryParameters3D.create(start, land)
+	q.collision_mask = 1
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		land = hit.get("position", land) - fwd * 0.35
+		land.y = 0.1
+	var stone := MeshInstance3D.new()
+	var sph := SphereMesh.new()
+	sph.radius = 0.09
+	sph.height = 0.18
+	stone.mesh = sph
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.32, 0.3, 0.28)
+	m.roughness = 0.95
+	stone.material_override = m
+	get_tree().current_scene.add_child(stone)
+	stone.global_position = start
+	var peak: Vector3 = (start + land) * 0.5 + Vector3(0, 1.6, 0)
+	var tw := create_tween()
+	tw.tween_property(stone, "global_position", peak, 0.18)
+	tw.tween_property(stone, "global_position", land, 0.18)
+	tw.tween_callback(func():
+		stone.queue_free()
+		emit_noise_at(land, Balance.NOISE_THROW)
+		Sfx.play("sfx_hit", -16.0, 1.7))
+	Sfx.play("sfx_swing", -12.0, 1.5)
+
+
+## Кровавый шип (Q): тратит магию и бьёт по направлению камеры.
+func _cast_spike() -> void:
+	if not GameState.spend_magic(Balance.SPIKE_COST):
+		Sfx.play("sfx_lowmagic", -14.0)
+		return
+	spike_cd = Balance.SPIKE_CD
+	_set_state("cast")
+	Sfx.play("sfx_cast", -8.0)
+	emit_noise(Balance.NOISE_SPIKE)
+	var dir := Vector3.ZERO
+	var cam := get_viewport().get_camera_3d()
+	if cam:
+		dir = -cam.global_transform.basis.z
+	if dir.length() < 0.05:
+		dir = -rig.global_transform.basis.z
+	dir.y = 0.0
+	_launch_spike(dir.normalized())
+
+
+## Летит по прямой, гаснет о стену или о первого врага.
+func _launch_spike(dir: Vector3) -> void:
+	var start: Vector3 = global_position + Vector3(0, 1.15, 0) + dir * 0.6
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.14, 0.14, 0.7)
+	mi.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.72, 0.07, 0.1)
+	m.emission_enabled = true
+	m.emission = Color(0.7, 0.05, 0.08)
+	m.emission_energy_multiplier = 2.2
+	m.roughness = 0.4
+	mi.material_override = m
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(0.9, 0.15, 0.18)
+	glow.light_energy = 0.9
+	glow.omni_range = 2.4
+	glow.shadow_enabled = false
+	mi.add_child(glow)
+	get_tree().current_scene.add_child(mi)
+	mi.global_position = start
+	mi.look_at(start + dir, Vector3.UP)
+	var space := get_world_3d().direct_space_state
+	var pos := start
+	var left: float = Balance.SPIKE_RANGE
+	while left > 0.0:
+		await get_tree().physics_frame
+		if not is_instance_valid(mi):
+			return
+		if get_tree().paused:
+			continue
+		var step: float = minf(Balance.SPIKE_SPEED * get_physics_process_delta_time(), left)
+		var next := pos + dir * step
+		var q := PhysicsRayQueryParameters3D.create(pos, next)
+		q.collision_mask = 1 | 4
+		q.exclude = [get_rid()]
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty():
+			var body = hit.get("collider")
+			if body != null and body.has_method("take_damage"):
+				body.take_damage(Balance.SPIKE_DMG, global_position)
+			_spike_hit_fx(next)
+			mi.queue_free()
+			return
+		pos = next
+		mi.global_position = pos
+		left -= step
+	mi.queue_free()
+
+
+func _spike_hit_fx(pos: Vector3) -> void:
+	Sfx.play("sfx_hit", -8.0, 1.3)
+	var mi := MeshInstance3D.new()
+	var sph := SphereMesh.new()
+	sph.radius = 0.14
+	sph.height = 0.28
+	mi.mesh = sph
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.6, 0.05, 0.08, 0.85)
+	m.emission_enabled = true
+	m.emission = Color(0.6, 0.03, 0.05)
+	m.emission_energy_multiplier = 2.0
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi.material_override = m
+	get_tree().current_scene.add_child(mi)
+	mi.global_position = pos
+	var tw := create_tween()
+	tw.tween_property(mi, "scale", Vector3(2.2, 2.2, 2.2), 0.18)
+	tw.parallel().tween_property(m, "albedo_color:a", 0.0, 0.18)
+	tw.tween_callback(func(): mi.queue_free())
+
+
 func _physics_process(delta: float) -> void:
 	state_t += delta
 	invuln = max(0.0, invuln - delta)
+	distract_cd = max(0.0, distract_cd - delta)
+	spike_cd = max(0.0, spike_cd - delta)
 	if dead:
 		velocity.x = move_toward(velocity.x, 0, 20 * delta)
 		velocity.z = move_toward(velocity.z, 0, 20 * delta)
@@ -272,6 +491,9 @@ func _physics_process(delta: float) -> void:
 			Input.get_action_strength("move_right") - Input.get_action_strength("move_left"),
 			Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
 		)
+		crouching = Input.is_action_pressed("crouch") and state not in ["attack", "heavy", "dodge", "hurt", "cast"]
+	else:
+		crouching = false
 	var cam := get_viewport().get_camera_3d()
 	var yaw := 0.0
 	if cam:
@@ -285,7 +507,8 @@ func _physics_process(delta: float) -> void:
 	var target_speed := 0.0
 	match state:
 		"dodge":
-			velocity = dir * DODGE_SPEED if dir.length() > 0.1 else -rig.global_transform.basis.z * DODGE_SPEED
+			# направление фиксируется в момент рывка, иначе рывок «загзает» за курсором
+			velocity = dodge_dir * DODGE_SPEED * (1.0 - 0.3 * clampf(state_t / DODGE_TIME, 0.0, 1.0))
 			if state_t > DODGE_TIME:
 				_set_state("idle")
 		"attack":
@@ -313,33 +536,60 @@ func _physics_process(delta: float) -> void:
 			target_speed = 0.0
 			if state_t > 0.35:
 				_set_state("idle")
+		"cast":
+			# короткая пауза выброса руки — движение почти стоит
+			target_speed = SPEED * 0.15
+			if state_t > 0.35:
+				_set_state("idle")
 		_:
-			var run := Input.is_action_pressed("sneak")
-			target_speed = RUN if run else SPEED
+			var run := Input.is_action_pressed("sneak") and not crouching
+			target_speed = CROUCH if crouching else (RUN if run else SPEED)
 			if input.length() < 0.1:
 				target_speed = 0.0
 	_handle_input()
 
 	var desired := dir * target_speed
 	if state != "dodge":
-		velocity.x = move_toward(velocity.x, desired.x, ACCEL * delta)
-		velocity.z = move_toward(velocity.z, desired.z, ACCEL * delta)
+		# разгон резче торможения: остановка с ходу не должна быть «выключателем»
+		var cur_speed := Vector2(velocity.x, velocity.z).length()
+		var rate: float = ACCEL if desired.length() >= cur_speed else ACCEL * 0.75
+		velocity.x = move_toward(velocity.x, desired.x, rate * delta)
+		velocity.z = move_toward(velocity.z, desired.z, rate * delta)
 	velocity.y -= 18.0 * delta
 	if is_on_floor():
 		velocity.y = 0.0
 	move_and_slide()
 
-	# поворот рига по движению
-	if dir.length() > 0.1 and state in ["idle", "run"]:
-		var want := atan2(dir.x, dir.z)
+	# поворот рига по движению; в начале удара/каста герой ещё доворачивается
+	var can_turn: bool = dir.length() > 0.1 and (
+		state in ["idle", "run"] or (state in ["attack", "heavy", "cast"] and state_t < 0.1))
+	if can_turn:
+		var want := atan2(-dir.x, -dir.z)
+		var prev_yaw := rig.rotation.y
 		rig.rotation.y = lerp_angle(rig.rotation.y, want, 12.0 * delta)
+		var dy := wrapf(rig.rotation.y - prev_yaw, -PI, PI)
+		turn_rate = lerp(turn_rate, dy / maxf(delta, 0.001), 8.0 * delta)
+	else:
+		turn_rate = lerp(turn_rate, 0.0, 8.0 * delta)
 	_animate(delta)
 
 
 func _handle_input() -> void:
-	if not control_enabled or state in ["attack", "heavy", "dodge", "hurt"]:
+	if not control_enabled or state in ["attack", "heavy", "dodge", "hurt", "cast"]:
+		return
+	if Input.is_action_just_pressed("distract") and distract_cd <= 0.0:
+		_throw_stone()
+		return
+	if Input.is_action_just_pressed("spike") and spike_cd <= 0.0:
+		_cast_spike()
 		return
 	if Input.is_action_just_pressed("dash") and GameState.spend_magic(Balance.DODGE_COST):
+		dodge_dir = move_dir
+		dodge_dir.y = 0.0
+		if dodge_dir.length() < 0.1:
+			dodge_dir = -rig.global_transform.basis.z
+			dodge_dir.y = 0.0
+		dodge_dir = dodge_dir.normalized()
 		_set_state("dodge")
 		invuln = Balance.HERO_INVULN_DODGE
 		Sfx.play("sfx_swing", -10.0, 1.4)
@@ -429,6 +679,10 @@ func _hit(heavy: bool) -> void:
 		Sfx.play("sfx_hit_heavy" if heavy else "sfx_hit", -6.0)
 		_impact(hit_pos, heavy)
 		_hitstop()
+		emit_noise(Balance.NOISE_HIT)
+		var cam_node := get_tree().get_first_node_in_group("cam")
+		if cam_node != null and cam_node.has_method("shake"):
+			cam_node.shake(2.6 if heavy else 1.4, 0.16)
 	else:
 		Sfx.play("sfx_swing", -14.0, 1.2)
 
@@ -445,6 +699,7 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 		var away := (global_position - from)
 		away.y = 0
 		velocity = away.normalized() * 6.0
+	emit_noise(Balance.NOISE_HIT)
 	if GameState.health <= 0.0:
 		die()
 
@@ -497,6 +752,14 @@ func _animate(dt: float) -> void:
 		chest.rotation.y = lerp(0.0, 0.5, wind) - strike * 0.9
 		chest.rotation.x = -0.15 + strike * 0.5
 		head.rotation.x = 0.1
+	elif state == "cast":
+		# выброс правой руки вперёд — шип уходит по направлению камеры
+		var ct: float = clampf(state_t / 0.35, 0.0, 1.0)
+		ar = lerp(-0.5, -1.55, ct)
+		elbow_r = -0.15
+		al = -0.25
+		chest.rotation.y = lerp(chest.rotation.y, 0.3, dt * 14.0)
+		chest.rotation.x = lerp(chest.rotation.x, -0.1, dt * 12.0)
 	else:
 		chest.rotation.y = lerp(chest.rotation.y, 0.0, dt * 10.0)
 		chest.rotation.x = lerp(chest.rotation.x, 0.0, dt * 10.0)
@@ -534,12 +797,57 @@ func _animate(dt: float) -> void:
 		arm_r.rotation.x = lerp(arm_r.rotation.x, ar, dt * 22.0)
 		forearm_r.rotation.x = lerp(forearm_r.rotation.x, -0.3, dt * 18.0)
 
-	# шаги
+	# присед: ниже корпус, ближе к земле — меньше заметность и тише шаг
+	if crouching and state not in ["attack", "heavy", "dodge", "hurt", "cast"]:
+		hips.position.y = lerp(hips.position.y, 0.56, dt * 9.0)
+		chest.rotation.x = lerp(chest.rotation.x, 0.3, dt * 8.0)
+		head.rotation.x = lerp(head.rotation.x, -0.2, dt * 8.0)
+
+	# шаги: каждый шаг — событие шума для стражи
 	if moving and is_on_floor():
 		step_t += dt
-		if step_t > (0.42 if speed < 4.5 else 0.3):
+		if step_t > (0.55 if crouching else (0.42 if speed < 4.5 else 0.3)):
 			step_t = 0.0
-			Sfx.play_varied("sfx_step", -24.0)
+			Sfx.play_varied("sfx_step", -24.0 if not crouching else -30.0)
+			emit_noise(noise_radius())
+
+	if use_model:
+		_animate_model(dt)
+
+
+## Анимации glTF-модели героя (Idle/Walk/Run/Sword_Slash/Roll/Death...).
+func _animate_model(dt: float) -> void:
+	if anim == null:
+		return
+	var speed := Vector2(velocity.x, velocity.z).length()
+	if dead:
+		ModelUtil.play_key(anim, ["Death"], false)
+		return
+	match state:
+		"attack":
+			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 1.05 + 0.16 * combo_step, 0.07)
+		"heavy":
+			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 0.72, 0.10)
+		"dodge":
+			ModelUtil.play_key(anim, ["Roll"], false, 1.2, 0.06)
+		"hurt":
+			ModelUtil.play_key(anim, ["HitRecieve", "HitReact"], false, 1.1, 0.05)
+		_:
+			if speed > 0.45:
+				var running := speed > 4.4
+				var base := RUN if running else SPEED
+				ModelUtil.play_key(anim, ["Run"] if running else ["Walk"], true,
+					clampf(speed / base, 0.7, 1.6), 0.2)
+			else:
+				ModelUtil.play_key(anim, ["Idle"], true, 1.0, 0.25)
+	if model_root != null:
+		var lean := -0.12 if state == "dodge" else 0.0
+		if crouching and state not in ["attack", "heavy", "dodge"]:
+			lean = 0.16
+		model_root.rotation.x = lerp(model_root.rotation.x, lean, dt * 10.0)
+		# крен в поворот: тело заваливается в сторону, а не «щёлкает» на 180°
+		var roll: float = clampf(-turn_rate * 0.03, -0.22, 0.22)
+		model_root.rotation.z = lerp(model_root.rotation.z, roll, dt * 9.0)
 
 
 func _impact(pos: Vector3, heavy: bool) -> void:
@@ -555,8 +863,8 @@ func _impact(pos: Vector3, heavy: bool) -> void:
 	m.emission_energy_multiplier = 5.0
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mi.material_override = m
-	mi.global_position = pos
 	get_tree().current_scene.add_child(mi)
+	mi.global_position = pos
 	var tw := create_tween()
 	tw.tween_property(mi, "scale", Vector3(3.0, 3.0, 3.0), 0.16)
 	tw.parallel().tween_property(m, "albedo_color:a", 0.0, 0.16)
