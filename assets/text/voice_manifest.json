@@ -1,0 +1,324 @@
+{
+  "version": 1,
+  "note": "Генерится src/voice/collect_voice_manifest.py; id стабильные, не перенумеровывать — на них завязан кэш озвучки.",
+  "speakers": {
+    "Торвин": {
+      "sex": "male",
+      "note": "низкий мужской, гном, живой"
+    },
+    "Селена Вейн": {
+      "sex": "female",
+      "note": "женский, усталая горечь"
+    },
+    "Гхарн": {
+      "sex": "male",
+      "note": "рычащий низкий босс"
+    },
+    "Стражник": {
+      "sex": "male",
+      "note": "армейские реплики, мрачный"
+    },
+    "Рассказчик": {
+      "sex": "male",
+      "note": "за кадром, записки/предметы/барки"
+    }
+  },
+  "lines": [
+    {
+      "speaker": "Торвин",
+      "text": "Ð¢ÑÐ¿Ð»Ð¾Ðµ. Ð¡Ð¾Ð»ÑÐ½Ð¾Ðµ. ÐÐ½Ð¾ ÑÐµÐ²ÐµÐ»Ð¸ÑÑÑ Ð²Ð¾ Ð¼Ð½Ðµ â Ð¸ Ð¼Ð°Ð³Ð¸Ñ ÑÐ½Ð¾Ð²Ð° ÑÐµÑÑÑ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_001",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÐ²Ð°Ð´ÑÐ°ÑÑ ÐµÐ´Ð¸Ð½Ð¸Ñ â Ð¸ Ð¾ÐºÐ¾Ð²Ñ Ð¿Ð¾Ð´Ð´Ð°Ð´ÑÑÑÑ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_002",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¡Ð²Ð¾Ð±Ð¾Ð´Ð°. ÐÐ°ÑÐ½ÐµÑ ÑÑÑÐ¾ÑÑÑÑ Ð¸ Ð¶ÐµÐ»ÐµÐ·Ð¾Ð¼.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_003",
+      "priority": 1
+    },
+    {
+      "speaker": "Селена Вейн",
+      "text": "ÐÐ½Ð¾Ð¼. ÐÐ¸Ð²Ð¾Ð¹. ÐÐ½Ð°ÑÐ¸Ñ, ÑÑÐ¾ Ð¿ÑÐ°Ð²Ð´Ð° â Ð²Ñ ÐµÐ´Ð¸ÑÐµ Ð½Ð°Ñ Ð¸ Ð¿Ð¾Ð»ÑÑÐ°ÐµÑÐµ ÑÐ¸Ð»Ñ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_004",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¯ Ð½Ðµ ÐµÐ»... Ð¯ Ð²ÑÐ¶Ð¸Ð²Ð°Ð». Ð­ÑÐ¾ ÑÐ°Ð·Ð½ÑÐµ Ð²ÐµÑÐ¸. ÐÐ½Ð¾Ð³Ð´Ð°.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_005",
+      "priority": 1
+    },
+    {
+      "speaker": "Селена Вейн",
+      "text": "ÐÐ¾Ð¹ Ð±ÑÐ°Ñ ÐÑÐ»Ð°Ð½ Ð¿Ð¾Ð³Ð¸Ð± Ð² Ð³Ð¾ÑÐ°Ñ ÑÐµÐ¼Ñ Ð»ÐµÑ Ð½Ð°Ð·Ð°Ð´. Ð¡ÐºÐ°Ð¶Ð¸, ÑÑÐ¾ ÑÑ Ð½Ðµ...",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_006",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¯ Ð·Ð½Ð°Ð» ÐµÐ³Ð¾.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_007",
+      "priority": 1
+    },
+    {
+      "speaker": "Селена Вейн",
+      "text": "Ð¢Ð¾Ð³Ð´Ð° ÑÐ»ÑÑÐ°Ð¹: ÐµÑÑÑ ÑÐ¸ÑÑÐ°Ð», ÐºÐ¾ÑÐ¾ÑÑÐ¹ Ð²ÑÐ¶Ð¸Ð³Ð°ÐµÑ Ð¼Ð°Ð³Ð¸Ñ Ð¸Ð· ÐºÑÐ¾Ð²Ð¸. ÐÑÐ±ÑÑ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_008",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÑÐ¾ÑÑÐ¸. ÐÐ¾ Ð¼Ð½Ðµ ÑÐ»Ð¸ÑÐºÐ¾Ð¼ Ð¼Ð½Ð¾Ð³Ð¾ Ð³Ð¾Ð»Ð¾Ð´Ð°.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_009",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÑÑÑ Ð²ÑÐ±Ð¾ÑÑ, ÐºÐ¾ÑÐ¾ÑÑÑ Ñ Ð½Ðµ Ð¼Ð¾Ð³Ñ ÑÐµÐ±Ðµ Ð¿Ð¾Ð·Ð²Ð¾Ð»Ð¸ÑÑ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_010",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÑÑ. Ð¥Ð²Ð°ÑÐ¸Ñ. Ð¯ Ð±Ð¾Ð»ÑÑÐµ Ð½Ðµ Ð±ÑÐ´Ñ ÑÐµÐ¼, ÐºÐµÐ¼ Ð¼ÐµÐ½Ñ ÑÐ´ÐµÐ»Ð°Ð»Ð¸.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_011",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¨Ð°ÑÑÐ°. ÐÐ¾Ð·Ð´ÑÑ. Ð¡Ð½ÐµÐ³. Ð¡Ð²Ð¾Ð±Ð¾Ð´Ð° Ð¿Ð°ÑÐ½ÐµÑ ÑÐ¾Ð»Ð¾Ð´Ð¾Ð¼.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_012",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¯ Ð²ÑÑÐµÐ» Ð¸Ð· Ð·ÐµÐ¼Ð»Ð¸. ÐÐ°Ð´ Ð³Ð¾ÑÐ°Ð¼Ð¸ â ÐºÑÐ¾Ð²Ð°Ð²Ð°Ñ Ð»ÑÐ½Ð°, Ð¸ ÑÐ½ÐµÐ³ Ð² ÐµÑ ÑÐ²ÐµÑÐµ ÐºÐ°Ð¶ÐµÑÑÑ Ð¿ÐµÐ¿Ð»Ð¾Ð¼.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_013",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÐµÑÐ²ÑÐ¹ ÑÐ°Ð³ ÑÐ´ÐµÐ»Ð°Ð½. Ð¢ÐµÐ¿ÐµÑÑ â Ð²Ð¾Ð¹Ð½Ð°.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_014",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÑÐ¾ÑÑÐ¿Ð°Ð¹ÑÑ, Ð³Ð½Ð¾Ð¼. Ð¨Ð°ÑÑÐ° Â«ÐÑÐ¾Ð²Ð°Ð²ÑÐ¹ ÐÐ»ÑÐºÂ», Ð³Ð¾Ð´ ÑÐµÐ´ÑÐ¼Ð¾Ð¹ Ð¿Ð¾ÑÐ»Ðµ Ð Ð°ÑÐºÐ¾Ð»Ð°.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_015",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "ÐÐ°Ð½Ð´Ð°Ð»Ñ, Ð¿ÑÑÑÐ°Ñ ÐºÐ°Ð¼ÐµÑÐ° Ð¸ Ð·Ð°Ð¿Ð°Ñ Ð³Ð½Ð¸Ð»Ð¾Ð¹ Ð¿Ð»Ð¾ÑÐ¸. ÐÐ½Ð°ÑÐ¸Ñ, Ñ ÐµÑÑ Ð¶Ð¸Ð².",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_016",
+      "priority": 1
+    },
+    {
+      "speaker": "Торвин",
+      "text": "Ð¡Ð½Ð¾Ð²Ð° ÑÑÐ¾Ñ ÐºÐ°Ð¼ÐµÐ½Ñ. Ð¡Ð½Ð¾Ð²Ð° ÑÑÐ¾Ñ Ð²Ð¾Ð·Ð´ÑÑ. ÐÐ´ÑÐ¼ Ð´Ð°Ð»ÑÑÐµ.",
+      "source": "mission3d.gd",
+      "kind": "dlg",
+      "id": "m1_dlg_017",
+      "priority": 1
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Эй, кто там?",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_001",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Слышу шаги...",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_002",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Огонь гаснет...",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_003",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Не подходи.",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_004",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Кто-то идёт.",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_005",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Тихо там.",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_006",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Берегись!",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_007",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Свет гаснет...",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_008",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Звук шагов...",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_009",
+      "priority": 3
+    },
+    {
+      "speaker": "Стражник",
+      "text": "Кто здесь?",
+      "source": "lore.json#barks",
+      "kind": "bark",
+      "id": "m1_bark_010",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Стражи боятся света. Держись факелов.",
+      "source": "lore.json#notes",
+      "kind": "note",
+      "id": "m1_note_001",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Босс в глубине. Не подходи без оружия.",
+      "source": "lore.json#notes",
+      "kind": "note",
+      "id": "m1_note_002",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Кровь даёт силу, но отнимает разум.",
+      "source": "lore.json#notes",
+      "kind": "note",
+      "id": "m1_note_003",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Селена знает путь. Поговори с ней.",
+      "source": "lore.json#notes",
+      "kind": "note",
+      "id": "m1_note_004",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Кольцо силы. +10 к урону.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_001",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Амулет защиты. +5 к защите.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_002",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Свиток огня. +15 магии.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_003",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Зелье лечения. +25 HP.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_004",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Сапоги скорости. +1 к скорости.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_005",
+      "priority": 3
+    },
+    {
+      "speaker": "Рассказчик",
+      "text": "Плащ теней. +10% к уклонению.",
+      "source": "lore.json#items",
+      "kind": "item",
+      "id": "m1_item_006",
+      "priority": 3
+    }
+  ]
+}
