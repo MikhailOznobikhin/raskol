@@ -1,0 +1,23 @@
+# Godot 4 — служебный кэш импорта
+.godot/
+
+# Пустые шаблоны экспорта (движок сам их создаёт в tools/appdata)
+export_templates/
+
+# Сборки игры
+build/
+
+# Вендоренные инструменты (Godot-движок, ffmpeg, ffmpeg, appdata-песочница).
+# Путей восстановления: ROADMAP.md §1.1–1.5 — откуда их скачать/где лежат.
+tools/
+
+# Python-генераторы
+__pycache__/
+*.py[cod]
+
+# ОС / редакторы
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,53 @@
+config_version=5
+
+[application]
+
+config/name="Кровавая магия и Раскол"
+config/description="Тёмное фэнтези. Вертикальный срез: пролог и Миссия 1 «Побег»."
+run/main_scene="res://main3d.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+boot_splash/show_image=false
+
+[autoload]
+
+GameState="*res://scripts/game_state.gd"
+Art="*res://scripts/art.gd"
+Sfx="*res://scripts/sfx.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/size/mode="fullscreen"
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="mobile"
+textures/canvas_textures/default_texture_filter=0
+environment/defaults/default_clear_color=Color(0.02, 0.02, 0.03, 1)
+2d/snap/snap_2d_transforms_to_pixel=false
+2d/snap/snap_2d_vertices_to_pixel=false
+
+[debug]
+
+gdscript/warnings/treat_warnings_as_errors=false
+
+[physics]
+
+common/physics_ticks_per_second=60
+2d/default_gravity=0.0
+
+[importer_defaults]
+
+texture={
+"compress/mode": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false,
+"process/fix_alpha_border": false,
+"roughness/mode": 0
+}

@@ -1,0 +1,608 @@
+{
+ "frame": [
+  48,
+  64
+ ],
+ "characters": {
+  "hero": {
+   "dirs": {
+    "down": {
+     "idle": {
+      "sheet": "res://assets/sprites/hero/down_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/hero/down_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "sneak": {
+      "sheet": "res://assets/sprites/hero/down_sneak.png",
+      "frames": 4,
+      "fps": 6.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/hero/down_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/hero/down_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "cast": {
+      "sheet": "res://assets/sprites/hero/down_cast.png",
+      "frames": 4,
+      "fps": 10.0
+     },
+     "dash": {
+      "sheet": "res://assets/sprites/hero/down_dash.png",
+      "frames": 2,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/hero/down_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/hero/down_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "left": {
+     "idle": {
+      "sheet": "res://assets/sprites/hero/left_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/hero/left_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "sneak": {
+      "sheet": "res://assets/sprites/hero/left_sneak.png",
+      "frames": 4,
+      "fps": 6.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/hero/left_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/hero/left_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "cast": {
+      "sheet": "res://assets/sprites/hero/left_cast.png",
+      "frames": 4,
+      "fps": 10.0
+     },
+     "dash": {
+      "sheet": "res://assets/sprites/hero/left_dash.png",
+      "frames": 2,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/hero/left_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/hero/left_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "right": {
+     "idle": {
+      "sheet": "res://assets/sprites/hero/right_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/hero/right_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "sneak": {
+      "sheet": "res://assets/sprites/hero/right_sneak.png",
+      "frames": 4,
+      "fps": 6.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/hero/right_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/hero/right_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "cast": {
+      "sheet": "res://assets/sprites/hero/right_cast.png",
+      "frames": 4,
+      "fps": 10.0
+     },
+     "dash": {
+      "sheet": "res://assets/sprites/hero/right_dash.png",
+      "frames": 2,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/hero/right_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/hero/right_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "up": {
+     "idle": {
+      "sheet": "res://assets/sprites/hero/up_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/hero/up_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "sneak": {
+      "sheet": "res://assets/sprites/hero/up_sneak.png",
+      "frames": 4,
+      "fps": 6.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/hero/up_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/hero/up_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "cast": {
+      "sheet": "res://assets/sprites/hero/up_cast.png",
+      "frames": 4,
+      "fps": 10.0
+     },
+     "dash": {
+      "sheet": "res://assets/sprites/hero/up_dash.png",
+      "frames": 2,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/hero/up_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/hero/up_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    }
+   }
+  },
+  "guard": {
+   "dirs": {
+    "down": {
+     "idle": {
+      "sheet": "res://assets/sprites/guard/down_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/guard/down_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/guard/down_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/guard/down_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/guard/down_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "left": {
+     "idle": {
+      "sheet": "res://assets/sprites/guard/left_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/guard/left_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/guard/left_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/guard/left_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/guard/left_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "right": {
+     "idle": {
+      "sheet": "res://assets/sprites/guard/right_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/guard/right_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/guard/right_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/guard/right_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/guard/right_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "up": {
+     "idle": {
+      "sheet": "res://assets/sprites/guard/up_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/guard/up_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/guard/up_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/guard/up_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/guard/up_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    }
+   }
+  },
+  "jailer": {
+   "dirs": {
+    "down": {
+     "idle": {
+      "sheet": "res://assets/sprites/jailer/down_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/jailer/down_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/jailer/down_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/jailer/down_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/jailer/down_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "left": {
+     "idle": {
+      "sheet": "res://assets/sprites/jailer/left_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/jailer/left_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/jailer/left_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/jailer/left_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/jailer/left_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "right": {
+     "idle": {
+      "sheet": "res://assets/sprites/jailer/right_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/jailer/right_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/jailer/right_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/jailer/right_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/jailer/right_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "up": {
+     "idle": {
+      "sheet": "res://assets/sprites/jailer/up_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/jailer/up_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/jailer/up_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/jailer/up_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/jailer/up_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    }
+   }
+  },
+  "gharn": {
+   "dirs": {
+    "down": {
+     "idle": {
+      "sheet": "res://assets/sprites/gharn/down_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/gharn/down_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/gharn/down_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/gharn/down_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/gharn/down_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/gharn/down_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "left": {
+     "idle": {
+      "sheet": "res://assets/sprites/gharn/left_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/gharn/left_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/gharn/left_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/gharn/left_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/gharn/left_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/gharn/left_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "right": {
+     "idle": {
+      "sheet": "res://assets/sprites/gharn/right_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/gharn/right_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/gharn/right_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/gharn/right_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/gharn/right_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/gharn/right_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    },
+    "up": {
+     "idle": {
+      "sheet": "res://assets/sprites/gharn/up_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "walk": {
+      "sheet": "res://assets/sprites/gharn/up_walk.png",
+      "frames": 6,
+      "fps": 9.0
+     },
+     "attack": {
+      "sheet": "res://assets/sprites/gharn/up_attack.png",
+      "frames": 4,
+      "fps": 14.0
+     },
+     "heavy": {
+      "sheet": "res://assets/sprites/gharn/up_heavy.png",
+      "frames": 5,
+      "fps": 10.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/gharn/up_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     },
+     "dead": {
+      "sheet": "res://assets/sprites/gharn/up_dead.png",
+      "frames": 1,
+      "fps": 4.0
+     }
+    }
+   }
+  },
+  "selena": {
+   "dirs": {
+    "down": {
+     "idle": {
+      "sheet": "res://assets/sprites/selena/down_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/selena/down_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     }
+    },
+    "left": {
+     "idle": {
+      "sheet": "res://assets/sprites/selena/left_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/selena/left_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     }
+    },
+    "right": {
+     "idle": {
+      "sheet": "res://assets/sprites/selena/right_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/selena/right_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     }
+    },
+    "up": {
+     "idle": {
+      "sheet": "res://assets/sprites/selena/up_idle.png",
+      "frames": 2,
+      "fps": 3.0
+     },
+     "hurt": {
+      "sheet": "res://assets/sprites/selena/up_hurt.png",
+      "frames": 2,
+      "fps": 8.0
+     }
+    }
+   }
+  }
+ }
+}

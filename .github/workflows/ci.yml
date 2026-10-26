@@ -1,0 +1,26 @@
+# CI: импорт проекта + автотест прохождения (--test3d) на каждый push.
+# Движок и шаблоны берутся из образа barichello/godot-ci (бесплатно).
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    container: barichello/godot-ci:4.4.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Импорт ресурсов (регистрация class_name)
+        run: godot --headless --path . --import
+
+      - name: Автотест прохождения
+        run: |
+          set -o pipefail
+          godot --headless --path . -- --test3d 2>&1 | tee test.log
+          grep -q "TEST DONE escaped=true" test.log || {
+            echo "::error::Автотест не зелёный — ожидается TEST DONE escaped=true"
+            exit 1
+          }

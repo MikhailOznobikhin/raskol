@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "godot": {
+      "type": "local",
+      "command": ["cmd", "/c", "npx", "-y", "@coding-solo/godot-mcp"],
+      "enabled": true,
+      "environment": {
+        "GODOT_PATH": "C:\\Users\\mixao\\myproject\\game\\tools\\godot\\Godot_v4.4.1-stable_win64_console.exe"
+      }
+    },
+    "context7": {
+      "type": "local",
+      "command": ["cmd", "/c", "npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true
+    },
+    "memory": {
+      "type": "local",
+      "command": ["cmd", "/c", "npx", "-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    }
+  }
+}

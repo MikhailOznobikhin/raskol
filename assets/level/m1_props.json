@@ -1,0 +1,431 @@
+{
+ "tile": 32,
+ "props": [
+  {
+   "type": "torch",
+   "x": 208,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 304,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 400,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 624,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 848,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 1008,
+   "y": 704
+  },
+  {
+   "type": "torch",
+   "x": 1168,
+   "y": 352
+  },
+  {
+   "type": "torch",
+   "x": 1360,
+   "y": 352
+  },
+  {
+   "type": "torch",
+   "x": 1552,
+   "y": 352
+  },
+  {
+   "type": "torch",
+   "x": 1744,
+   "y": 352
+  },
+  {
+   "type": "torch",
+   "x": 1104,
+   "y": 736
+  },
+  {
+   "type": "torch",
+   "x": 1296,
+   "y": 736
+  },
+  {
+   "type": "torch",
+   "x": 1488,
+   "y": 736
+  },
+  {
+   "type": "torch",
+   "x": 1680,
+   "y": 736
+  },
+  {
+   "type": "torch",
+   "x": 368,
+   "y": 416
+  },
+  {
+   "type": "torch",
+   "x": 656,
+   "y": 416
+  },
+  {
+   "type": "torch",
+   "x": 944,
+   "y": 416
+  },
+  {
+   "type": "torch",
+   "x": 1040,
+   "y": 416
+  },
+  {
+   "type": "torch",
+   "x": 784,
+   "y": 64
+  },
+  {
+   "type": "torch",
+   "x": 912,
+   "y": 64
+  },
+  {
+   "type": "torch",
+   "x": 1040,
+   "y": 64
+  },
+  {
+   "type": "brazier",
+   "x": 1456,
+   "y": 448
+  },
+  {
+   "type": "brazier",
+   "x": 1680,
+   "y": 640
+  },
+  {
+   "type": "brazier",
+   "x": 528,
+   "y": 480
+  },
+  {
+   "type": "brazier",
+   "x": 976,
+   "y": 672
+  },
+  {
+   "type": "brazier",
+   "x": 1424,
+   "y": 768
+  },
+  {
+   "type": "cell_door",
+   "x": 208,
+   "y": 864,
+   "id": "door_start",
+   "cell": "start"
+  },
+  {
+   "type": "cell_door",
+   "x": 464,
+   "y": 864,
+   "id": "door_a",
+   "cell": "a"
+  },
+  {
+   "type": "cell_door",
+   "x": 720,
+   "y": 864,
+   "id": "door_b",
+   "cell": "b"
+  },
+  {
+   "type": "cell_door",
+   "x": 944,
+   "y": 864,
+   "id": "door_c",
+   "cell": "c"
+  },
+  {
+   "type": "bars",
+   "x": 112,
+   "y": 864,
+   "tiles": 2
+  },
+  {
+   "type": "bars",
+   "x": 304,
+   "y": 864,
+   "tiles": 2
+  },
+  {
+   "type": "bars",
+   "x": 816,
+   "y": 864,
+   "tiles": 4
+  },
+  {
+   "type": "refuse",
+   "x": 240,
+   "y": 960,
+   "amount": 30
+  },
+  {
+   "type": "straw_bed",
+   "x": 144,
+   "y": 992
+  },
+  {
+   "type": "bucket",
+   "x": 304,
+   "y": 992
+  },
+  {
+   "type": "chain",
+   "x": 336,
+   "y": 896
+  },
+  {
+   "type": "banner",
+   "x": 336,
+   "y": 736
+  },
+  {
+   "type": "banner",
+   "x": 880,
+   "y": 736
+  },
+  {
+   "type": "barrel",
+   "x": 560,
+   "y": 800
+  },
+  {
+   "type": "crate",
+   "x": 592,
+   "y": 800
+  },
+  {
+   "type": "chain",
+   "x": 784,
+   "y": 736
+  },
+  {
+   "type": "chain",
+   "x": 976,
+   "y": 736
+  },
+  {
+   "type": "bones",
+   "x": 656,
+   "y": 832
+  },
+  {
+   "type": "cauldron",
+   "x": 1232,
+   "y": 832
+  },
+  {
+   "type": "refuse",
+   "x": 1296,
+   "y": 896,
+   "amount": 45
+  },
+  {
+   "type": "refuse",
+   "x": 1392,
+   "y": 864,
+   "amount": 35
+  },
+  {
+   "type": "refuse",
+   "x": 1456,
+   "y": 928,
+   "amount": 50
+  },
+  {
+   "type": "table",
+   "x": 1616,
+   "y": 832
+  },
+  {
+   "type": "barrel",
+   "x": 1712,
+   "y": 928
+  },
+  {
+   "type": "barrel",
+   "x": 1744,
+   "y": 960
+  },
+  {
+   "type": "crate",
+   "x": 1680,
+   "y": 864
+  },
+  {
+   "type": "bucket",
+   "x": 1168,
+   "y": 992
+  },
+  {
+   "type": "refuse",
+   "x": 1776,
+   "y": 992,
+   "amount": 40
+  },
+  {
+   "type": "gate",
+   "x": 1616,
+   "y": 736,
+   "id": "gate_barracks"
+  },
+  {
+   "type": "lever",
+   "x": 1520,
+   "y": 768,
+   "id": "lever_gate"
+  },
+  {
+   "type": "table",
+   "x": 1328,
+   "y": 448
+  },
+  {
+   "type": "table",
+   "x": 1712,
+   "y": 448
+  },
+  {
+   "type": "ore_cart",
+   "x": 1488,
+   "y": 544
+  },
+  {
+   "type": "crate",
+   "x": 1264,
+   "y": 640
+  },
+  {
+   "type": "crate",
+   "x": 1296,
+   "y": 640
+  },
+  {
+   "type": "barrel",
+   "x": 1776,
+   "y": 608
+  },
+  {
+   "type": "chain",
+   "x": 1392,
+   "y": 384
+  },
+  {
+   "type": "chain",
+   "x": 1584,
+   "y": 384
+  },
+  {
+   "type": "straw_bed",
+   "x": 1776,
+   "y": 672
+  },
+  {
+   "type": "banner",
+   "x": 1456,
+   "y": 352
+  },
+  {
+   "type": "banner",
+   "x": 1648,
+   "y": 352
+  },
+  {
+   "type": "anvil",
+   "x": 464,
+   "y": 544
+  },
+  {
+   "type": "forge_fire",
+   "x": 400,
+   "y": 480
+  },
+  {
+   "type": "winch",
+   "x": 1008,
+   "y": 480
+  },
+  {
+   "type": "ore_cart",
+   "x": 720,
+   "y": 672
+  },
+  {
+   "type": "barrel",
+   "x": 432,
+   "y": 672
+  },
+  {
+   "type": "chain",
+   "x": 624,
+   "y": 448
+  },
+  {
+   "type": "chain",
+   "x": 816,
+   "y": 448
+  },
+  {
+   "type": "gate",
+   "x": 464,
+   "y": 736,
+   "id": "gate_forge"
+  },
+  {
+   "type": "lever",
+   "x": 560,
+   "y": 736,
+   "id": "lever_forge"
+  },
+  {
+   "type": "winch",
+   "x": 848,
+   "y": 128
+  },
+  {
+   "type": "crate",
+   "x": 1040,
+   "y": 256
+  },
+  {
+   "type": "barrel",
+   "x": 1072,
+   "y": 256
+  },
+  {
+   "type": "stairs",
+   "x": 944,
+   "y": 96,
+   "id": "exit"
+  },
+  {
+   "type": "chain",
+   "x": 1008,
+   "y": 96
+  }
+ ]
+}

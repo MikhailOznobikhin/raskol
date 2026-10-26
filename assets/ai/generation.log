@@ -1,0 +1,36 @@
+2026-10-26 20:52:42  старт: задач 1, палитра 95 цветов, интервал 46с
+2026-10-26 20:52:42  [1/1] gen characters/01_low-poly-3d-character-male 1024x1024
+2026-10-26 20:52:55  ГОТОВО: сгенерировано 1, ошибок 0, задач 1
+2026-10-26 20:56:36  старт: задач 77, палитра 95 цветов, интервал 46с
+2026-10-26 20:56:36  [1/77] gen characters/01_low-poly-3d-character-male 1024x1024
+2026-10-26 20:56:41     [01_low-poly-3d-character-male] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (1/30)
+2026-10-26 20:56:52     [01_low-poly-3d-character-male] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (2/30)
+2026-10-26 20:57:28     [01_low-poly-3d-character-male] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (3/30)
+2026-10-26 20:57:39     [01_low-poly-3d-character-male] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 32с (4/30)
+2026-10-26 20:58:18  [2/77] gen characters/02_low-poly-3d-character-male 1024x1024
+2026-10-26 20:59:12  [3/77] gen characters/03_low-poly-3d-character-male 1024x1024
+2026-10-26 21:00:08  [4/77] gen characters/04_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:01:00     [04_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (1/30)
+2026-10-26 21:01:13     [04_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 28с (2/30)
+2026-10-26 21:01:45     [04_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (3/30)
+2026-10-26 21:01:56     [04_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 34с (4/30)
+2026-10-26 21:02:37  [5/77] gen characters/05_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:03:32  [6/77] gen characters/06_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:04:22     [06_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (1/30)
+2026-10-26 21:04:35     [06_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (2/30)
+2026-10-26 21:05:09     [06_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (3/30)
+2026-10-26 21:05:22     [06_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 32с (4/30)
+2026-10-26 21:06:06  [7/77] gen characters/07_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:06:59  [8/77] gen characters/08_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:07:51     [08_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (1/30)
+2026-10-26 21:08:02     [08_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (2/30)
+2026-10-26 21:08:39  [9/77] gen characters/09_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:09:32     [09_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (1/30)
+2026-10-26 21:09:44     [09_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 32с (2/30)
+2026-10-26 21:10:20     [09_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (3/30)
+2026-10-26 21:10:32     [09_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (4/30)
+2026-10-26 21:11:07     [09_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (5/30)
+2026-10-26 21:11:18     [09_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (6/30)
+2026-10-26 21:11:58  [10/77] gen characters/10_low-poly-3d-character-dungeon 1024x1024
+2026-10-26 21:12:48     [10_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (1/30)
+2026-10-26 21:13:00     [10_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (2/30)
