@@ -651,8 +651,9 @@ func _hit(heavy: bool) -> void:
 			continue
 		seen.append(enemy)
 		enemy.take_damage(dmg, global_position)
-		if not heavy and combo_step == 2 and enemy.has_method("knockback"):
-			enemy.knockback(fwd, 5.0)
+		# разлёт: финальный удар комбо и тяжёлый (ПКМ) — тяжёлый отбрасывает сильнее
+		if enemy.has_method("knockback") and (heavy or combo_step == 2):
+			enemy.knockback(fwd, 8.5 if heavy else 5.0)
 		hit_pos = enemy.global_position + Vector3(0, 1.1, 0)
 		hit_any = true
 
@@ -670,8 +671,8 @@ func _hit(heavy: bool) -> void:
 			if flat.length() > 0.05 and fwd.dot(flat.normalized()) < 0.2:
 				continue
 			e.take_damage(dmg, global_position)
-			if not heavy and combo_step == 2 and e.has_method("knockback"):
-				e.knockback(fwd, 5.0)
+			if e.has_method("knockback") and (heavy or combo_step == 2):
+				e.knockback(fwd, 8.5 if heavy else 5.0)
 			hit_pos = center
 			hit_any = true
 
@@ -680,11 +681,17 @@ func _hit(heavy: bool) -> void:
 		_impact(hit_pos, heavy)
 		_hitstop()
 		emit_noise(Balance.NOISE_HIT)
-		var cam_node := get_tree().get_first_node_in_group("cam")
-		if cam_node != null and cam_node.has_method("shake"):
-			cam_node.shake(2.6 if heavy else 1.4, 0.16)
+		# первые два удара комбо только помечают ритм, третий и тяжёлый бьют по камере
+		_shake(2.6 if heavy else 0.45 + 0.9 * combo_step, 0.15)
 	else:
 		Sfx.play("sfx_swing", -14.0, 1.2)
+
+
+## Толкает камеру — главный способ «почувствовать» удар под ногами.
+func _shake(amount: float, duration: float) -> void:
+	var cam_node := get_tree().get_first_node_in_group("cam")
+	if cam_node != null and cam_node.has_method("shake"):
+		cam_node.shake(amount, duration)
 
 
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
@@ -695,6 +702,7 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	_bark_damage()
 	Sfx.play("sfx_hit", -5.0)
 	_set_state("hurt")
+	_shake(2.2, 0.18)
 	if from != Vector3.ZERO:
 		var away := (global_position - from)
 		away.y = 0
