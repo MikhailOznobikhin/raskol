@@ -21,3 +21,7 @@ Desktop.ini
 .DS_Store
 .idea/
 .vscode/
+
+# Рабочие логи AI-генерации ассетов
+assets/ai/generation.log
+assets/ai/run.out
