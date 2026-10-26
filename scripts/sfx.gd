@@ -3,9 +3,15 @@ extends Node
 
 const DIR := "res://assets/audio/"
 const POOL_SIZE := 14
+## Позиционный пул меньше: 3D-звуки идут от шагов и ударов, их не десятки
+## одновременно, а лишние узлы слушателя только нагружают.
+const POOL_3D_SIZE := 10
+const LISTEN_RANGE := 26.0
 
 var _pool: Array[AudioStreamPlayer] = []
+var _pool3d: Array[AudioStreamPlayer3D] = []
 var _next := 0
+var _next3d := 0
 var _cache: Dictionary = {}
 var _loops: Dictionary = {}
 var muted := false
@@ -17,6 +23,16 @@ func _ready() -> void:
 		p.bus = "Master"
 		add_child(p)
 		_pool.append(p)
+	for i in POOL_3D_SIZE:
+		var p := AudioStreamPlayer3D.new()
+		p.bus = "Master"
+		# без явного радиуса стража слышна из другого конца уровня;
+		# в Godot 4.4 опорная дистанция называется unit_size, а не distance_ref
+		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		p.unit_size = 1.5
+		p.max_distance = LISTEN_RANGE
+		add_child(p)
+		_pool3d.append(p)
 
 
 func _stream(name: String) -> AudioStream:
@@ -46,6 +62,27 @@ func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 
 func play_varied(name: String, volume_db := 0.0, spread := 0.08) -> void:
 	play(name, volume_db, 1.0 + randf_range(-spread, spread))
+
+
+## Звук из точки мира: шаги, звон оружия и магия иначе звучат одинаково
+## громко у виска и в другом конце коридора.
+func play_at(name: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
+	if muted:
+		return
+	var s := _stream(name)
+	if s == null:
+		return
+	var p := _pool3d[_next3d]
+	_next3d = (_next3d + 1) % POOL_3D_SIZE
+	p.stream = s
+	p.global_position = pos
+	p.volume_db = volume_db
+	p.pitch_scale = pitch
+	p.play()
+
+
+func play_at_varied(name: String, pos: Vector3, volume_db := 0.0, spread := 0.08) -> void:
+	play_at(name, pos, volume_db, 1.0 + randf_range(-spread, spread))
 
 
 ## Зацикленный эмбиент/музыка. Возвращает ключ для stop_loop.

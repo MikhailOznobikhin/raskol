@@ -355,6 +355,14 @@ func _test_mode() -> void:
 		get_tree().quit()
 		return
 	print("TEST hero model=ok weapon=ok hat=ok clips=ok")
+	# позиционный пул создаётся в _ready autoload: опечатка в имени свойства
+	# роняет его молча, и звук пропадает только на слух
+	if Sfx._pool3d.size() != Sfx.POOL_3D_SIZE:
+		print("TEST FAIL: пул AudioStreamPlayer3D = ", Sfx._pool3d.size(),
+			", ожидалось ", Sfx.POOL_3D_SIZE)
+		get_tree().quit()
+		return
+	print("TEST sfx3d pool=", Sfx._pool3d.size())
 	m._absorb(m.fleshes[0])
 	await get_tree().create_timer(0.3).timeout
 	print("TEST absorb magic=", GameState.magic, " craving=", GameState.craving)

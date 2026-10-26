@@ -376,8 +376,8 @@ func _throw_stone() -> void:
 	tw.tween_callback(func():
 		stone.queue_free()
 		emit_noise_at(land, Balance.NOISE_THROW)
-		Sfx.play("sfx_hit", -16.0, 1.7))
-	Sfx.play("sfx_swing", -12.0, 1.5)
+		Sfx.play_at("sfx_hit", land + Vector3(0, 0.1, 0), -16.0, 1.7))
+	Sfx.play_at("sfx_swing", _sfx_pos(), -12.0, 1.5)
 
 
 ## Кровавый шип (Q): тратит магию и бьёт по направлению камеры.
@@ -387,7 +387,7 @@ func _cast_spike() -> void:
 		return
 	spike_cd = Balance.SPIKE_CD
 	_set_state("cast")
-	Sfx.play("sfx_cast", -8.0)
+	Sfx.play_at("sfx_cast", _sfx_pos(), -8.0)
 	emit_noise(Balance.NOISE_SPIKE)
 	var dir := Vector3.ZERO
 	var cam := get_viewport().get_camera_3d()
@@ -451,7 +451,7 @@ func _launch_spike(dir: Vector3) -> void:
 
 
 func _spike_hit_fx(pos: Vector3) -> void:
-	Sfx.play("sfx_hit", -8.0, 1.3)
+	Sfx.play_at("sfx_hit", pos, -8.0, 1.3)
 	var mi := MeshInstance3D.new()
 	var sph := SphereMesh.new()
 	sph.radius = 0.14
@@ -592,7 +592,7 @@ func _handle_input() -> void:
 		dodge_dir = dodge_dir.normalized()
 		_set_state("dodge")
 		invuln = Balance.HERO_INVULN_DODGE
-		Sfx.play("sfx_swing", -10.0, 1.4)
+		Sfx.play_at("sfx_swing", _sfx_pos(), -10.0, 1.4)
 		return
 	if Input.is_action_just_pressed("attack"):
 		if state == "attack":
@@ -609,13 +609,14 @@ func _handle_input() -> void:
 		fwd.y = 0.0
 		if fwd.length() > 0.05:
 			velocity = fwd.normalized() * 4.0
-		Sfx.play("sfx_swing", -8.0, 0.8)
+		Sfx.play_at("sfx_swing", _sfx_pos(), -8.0, 0.8)
 
 
 func _start_attack() -> void:
 	_set_state("attack")
 	attack_done = false
-	Sfx.play_varied("sfx_swing", -9.0, 0.92 + 0.06 * combo_step)
+	# раньше шаг комбо уходил в spread, и взмах играл со случайным тоном ±50%
+	Sfx.play_at("sfx_swing", _sfx_pos(), -9.0, 0.92 + 0.06 * combo_step)
 
 
 func _hit(heavy: bool) -> void:
@@ -677,14 +678,14 @@ func _hit(heavy: bool) -> void:
 			hit_any = true
 
 	if hit_any:
-		Sfx.play("sfx_hit_heavy" if heavy else "sfx_hit", -6.0)
+		Sfx.play_at("sfx_hit_heavy" if heavy else "sfx_hit", hit_pos, -6.0)
 		_impact(hit_pos, heavy)
 		_hitstop()
 		emit_noise(Balance.NOISE_HIT)
 		# первые два удара комбо только помечают ритм, третий и тяжёлый бьют по камере
 		_shake(2.6 if heavy else 0.45 + 0.9 * combo_step, 0.15)
 	else:
-		Sfx.play("sfx_swing", -14.0, 1.2)
+		Sfx.play_at("sfx_swing", _sfx_pos(), -14.0, 1.2)
 
 
 ## Толкает камеру — главный способ «почувствовать» удар под ногами.
@@ -694,13 +695,18 @@ func _shake(amount: float, duration: float) -> void:
 		cam_node.shake(amount, duration)
 
 
+## Точка у груди героя — откуда звучат его взмахи и шаги.
+func _sfx_pos() -> Vector3:
+	return global_position + Vector3(0, 0.9, 0)
+
+
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	if invuln > 0.0 or dead:
 		return
 	invuln = 0.6
 	GameState.damage(amount)
 	_bark_damage()
-	Sfx.play("sfx_hit", -5.0)
+	Sfx.play_at("sfx_hit", _sfx_pos(), -5.0)
 	_set_state("hurt")
 	_shake(2.2, 0.18)
 	if from != Vector3.ZERO:
@@ -816,7 +822,7 @@ func _animate(dt: float) -> void:
 		step_t += dt
 		if step_t > (0.55 if crouching else (0.42 if speed < 4.5 else 0.3)):
 			step_t = 0.0
-			Sfx.play_varied("sfx_step", -24.0 if not crouching else -30.0)
+			Sfx.play_at_varied("sfx_step", global_position, -24.0 if not crouching else -30.0)
 			emit_noise(noise_radius())
 
 	if use_model:

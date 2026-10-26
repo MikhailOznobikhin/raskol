@@ -21,6 +21,19 @@ var attack_range := Balance.GUARD_RANGE
 var attack_damage := Balance.GUARD_DMG
 var detect_range := Balance.GUARD_DETECT
 
+# --- скрытность: внимание, зрение, слух ---
+var alertness := 0.0
+var sees_target := false
+var hero_light := 0.0
+var light_t := 0.0
+var last_seen := Vector3.ZERO
+var has_last := false
+var heard_pos := Vector3.ZERO
+var lose_t := 0.0
+var search_t := 0.0
+var scan_t := 0.0
+var home := Vector3.ZERO
+
 var rig: Node3D
 var body_root: Node3D
 var head: Node3D
@@ -29,6 +42,7 @@ var arm_l: Node3D
 var leg_l: Node3D
 var leg_r: Node3D
 var bar_fill: MeshInstance3D
+var bar_bg: MeshInstance3D
 var mat_cloth: StandardMaterial3D
 var mat_skin: StandardMaterial3D
 var mat_metal: StandardMaterial3D
@@ -37,6 +51,12 @@ var flash := 0.0
 var stagger_t := 0.0
 var phase := 0.0
 var bark_cd := 4.0
+
+var use_model := false
+var model_root: Node3D
+var anim: AnimationPlayer
+var flash_mat: StandardMaterial3D
+var anim_was_dead := false
 
 static var barks: Array = []
 
@@ -62,6 +82,7 @@ func setup(kind: String) -> void:
 
 func _ready() -> void:
 	add_to_group("enemies")
+	home = global_position
 	collision_layer = 4
 	collision_mask = 1
 	var cap := CapsuleShape3D.new()
@@ -72,6 +93,7 @@ func _ready() -> void:
 	col.position = Vector3(0, 0.85, 0)
 	add_child(col)
 	_build_rig()
+	_attach_model()
 	_build_bar()
 	_build_hurtbox()
 	_add_blob_shadow(0.6 if not is_boss else 0.95)
@@ -167,6 +189,28 @@ func _build_rig() -> void:
 			head.add_child(horn)
 
 
+## Надевает glTF-модель (зомби для стража, дракон для Пожирателя).
+func _attach_model() -> void:
+	ModelUtil.hide_meshes(rig)
+	rig.scale = Vector3.ONE
+	var path := "res://assets/monster.glb" if is_boss else "res://assets/guard.glb"
+	var h := Balance.BOSS_MODEL_HEIGHT if is_boss else Balance.GUARD_MODEL_HEIGHT
+	var model := ModelUtil.spawn(rig, path, h)
+	if model == null:
+		ModelUtil.show_meshes(rig)
+		if is_boss:
+			rig.scale = Vector3(1.35, 1.35, 1.35)
+		return
+	use_model = true
+	model_root = model
+	anim = ModelUtil.find_anim_player(model)
+	flash_mat = ModelUtil.make_flash_material()
+	ModelUtil.apply_overlay(model, flash_mat)
+	if is_boss:
+		model.position.y += 0.45
+	ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+
+
 func _build_bar() -> void:
 	var bg := MeshInstance3D.new()
 	var q := QuadMesh.new()
@@ -177,8 +221,9 @@ func _build_bar() -> void:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg.material_override = m
-	bg.position = Vector3(0, 2.2 if not is_boss else 2.9, 0)
+	bg.position = Vector3(0, 2.2 if not is_boss else 3.05, 0)
 	add_child(bg)
+	bar_bg = bg
 
 	bar_fill = MeshInstance3D.new()
 	var q2 := QuadMesh.new()
@@ -205,6 +250,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if target == null or not is_instance_valid(target):
 		return
+	_update_detection(delta)
 	if stagger_t > 0.0:
 		velocity.x = 0.0
 		velocity.z = 0.0
@@ -218,27 +264,52 @@ func _physics_process(delta: float) -> void:
 
 	match state:
 		"patrol":
-			if dist < detect_range and _can_see(target):
-				state = "chase"
-				Sfx.play("sfx_alert", -16.0, 1.1)
-				_bark()
+			_patrol(delta)
+			if alertness >= _suspicion_threshold():
+				_become_suspicious()
+		"return":
+			_return_to_post()
+			if alertness >= _suspicion_threshold():
+				_become_suspicious()
+		"suspicious":
+			velocity.x = 0.0
+			velocity.z = 0.0
+			var look: Vector3 = last_seen if has_last else target.global_position
+			_face(look - global_position)
+			if alertness >= Balance.GUARD_ALERT_MAX:
+				_start_chase()
+			elif state_t > Balance.GUARD_SUSPICIOUS_TIME:
+				if has_last:
+					_enter_search()
+				else:
+					state = "return"
+					state_t = 0.0
+		"search":
+			if sees_target and alertness >= Balance.GUARD_ALERT_MAX:
+				_start_chase()
 			else:
-				_patrol(delta)
+				_search(delta)
+				if search_t <= 0.0:
+					state = "return"
+					state_t = 0.0
 		"chase":
-			if dist > detect_range * 1.6:
-				state = "patrol"
-				velocity = Vector3.ZERO
+			if lose_t > Balance.GUARD_LOSE_TIME:
+				_enter_search()
 			elif dist > attack_range:
-				velocity = to.normalized() * chase_speed
+				velocity.x = to.normalized().x * chase_speed
+				velocity.z = to.normalized().z * chase_speed
 				_face(to)
 			else:
-				velocity = Vector3.ZERO
+				velocity.x = 0.0
+				velocity.z = 0.0
 				if attack_cd <= 0.0:
 					_attack()
 		"attack":
-			velocity = Vector3.ZERO
+			velocity.x = 0.0
+			velocity.z = 0.0
 			if state_t > 0.75:
 				state = "chase"
+				state_t = 0.0
 	_apply_gravity(delta)
 	move_and_slide()
 	_animate(delta)
@@ -246,12 +317,159 @@ func _physics_process(delta: float) -> void:
 		var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
 		bar_fill.scale = Vector3(ratio, 1.0, 1.0)
 		bar_fill.position.x = -(1.0 - ratio) * 0.48
+		if bar_bg:
+			# полоска живёт в мире: вблизи камеру заслоняла бы метровым щитом.
+			# Держим примерно постоянный размер на экране и прячем у целых спокойных врагов.
+			var cam := get_viewport().get_camera_3d()
+			if cam:
+				var d: float = cam.global_position.distance_to(bar_bg.global_position)
+				var k: float = clampf(d / 11.0, 0.10, 1.0)
+				bar_bg.scale = Vector3(k, k, k)
+				# вблизи полоска опускается к черепу, иначе «висит» в пустоте
+				bar_bg.position.y = lerpf(2.85, 3.05, k) if is_boss else lerpf(2.0, 2.2, k)
+			var calm: bool = state == "patrol" or state == "return"
+			bar_bg.visible = not dead and not (calm and ratio > 0.999)
 
 
 func _apply_gravity(dt: float) -> void:
 	velocity.y -= 20.0 * dt
 	if is_on_floor():
 		velocity.y = 0.0
+
+
+func _suspicion_threshold() -> float:
+	return Balance.GUARD_ALERT_MAX * 0.35
+
+
+## Слух: шум в радиусе (стены глушат вдвое) заставляет стражу идти проверять.
+func hear_noise(pos: Vector3, radius: float) -> void:
+	if dead or radius <= 0.0:
+		return
+	var heard := radius
+	if not _path_clear(global_position + Vector3(0, 1.3, 0), pos + Vector3(0, 0.7, 0)):
+		heard *= 0.5
+	if global_position.distance_to(pos) > heard:
+		return
+	heard_pos = pos
+	last_seen = pos
+	has_last = true
+	alertness = maxf(alertness, Balance.GUARD_ALERT_MAX * 0.55)
+	if state in ["patrol", "return", "suspicious"]:
+		_enter_search()
+	elif state == "search":
+		search_t = Balance.GUARD_SEARCH_TIME
+	_bark()
+
+
+func _enter_search() -> void:
+	state = "search"
+	state_t = 0.0
+	search_t = Balance.GUARD_SEARCH_TIME
+	scan_t = 0.0
+
+
+func _become_suspicious() -> void:
+	if state == "suspicious":
+		return
+	state = "suspicious"
+	state_t = 0.0
+	velocity.x = 0.0
+	velocity.z = 0.0
+	Sfx.play("sfx_alert", -22.0, 1.25)
+	_bark()
+
+
+func _start_chase() -> void:
+	if state != "chase":
+		Sfx.play("sfx_alert", -12.0, 1.0)
+	state = "chase"
+	state_t = 0.0
+	alertness = Balance.GUARD_ALERT_MAX
+	lose_t = 0.0
+
+
+## Собирает внимание к герою: свет, стойка, конус зрения и линия видимости.
+func _update_detection(dt: float) -> void:
+	light_t -= dt
+	if light_t <= 0.0:
+		light_t = 0.2
+		hero_light = _sample_hero_light()
+	var to: Vector3 = target.global_position - global_position
+	to.y = 0.0
+	var dist := to.length()
+	var range_now := _vision_range()
+	var visible: bool = dist <= range_now and _in_cone(target.global_position) and _has_los(target)
+	# вплотную страж чувствует героя даже за спиной
+	if not visible and dist < 1.8:
+		visible = _path_clear(global_position + Vector3(0, 1.2, 0),
+			target.global_position + Vector3(0, 1.0, 0))
+	sees_target = visible
+	if visible:
+		var closeness: float = clampf(1.0 - dist / maxf(range_now, 0.1), 0.0, 1.0)
+		var gain: float = 40.0 + 110.0 * closeness
+		if target.has_method("is_crouching") and target.is_crouching():
+			gain *= 0.7
+		if GameState.craving >= Balance.CRAVING_DETECT:
+			gain *= Balance.GUARD_CRAVING_MULT
+		alertness = minf(Balance.GUARD_ALERT_MAX, alertness + gain * dt)
+		last_seen = target.global_position
+		has_last = true
+		lose_t = 0.0
+	else:
+		alertness = maxf(0.0, alertness - 22.0 * dt)
+		lose_t += dt
+
+
+## Дальность зрения: темнота 7.5 м, яркий факел 17 м, стойка и жажда учитываются.
+func _vision_range() -> float:
+	var vis: float = clampf((20.0 + hero_light) * _hero_vis_mult(), 0.0, 100.0)
+	var r: float = lerpf(Balance.GUARD_DETECT_DARK, Balance.GUARD_DETECT_BRIGHT, vis / 100.0)
+	if detect_range > Balance.GUARD_DETECT:
+		r *= detect_range / Balance.GUARD_DETECT
+	return r
+
+
+func _hero_vis_mult() -> float:
+	if target != null and is_instance_valid(target) and target.has_method("visibility_mult"):
+		return target.visibility_mult()
+	return 1.0
+
+
+func _sample_hero_light() -> float:
+	if target == null or not is_instance_valid(target):
+		return 0.0
+	for d in get_tree().get_nodes_in_group("dungeon"):
+		if d != null and is_instance_valid(d) and d.has_method("light_at"):
+			return d.light_at(target.global_position)
+	return 0.0
+
+
+func _in_cone(pos: Vector3) -> bool:
+	var fwd: Vector3 = _gaze_dir()
+	var to: Vector3 = pos - global_position
+	to.y = 0.0
+	if fwd.length() < 0.01 or to.length() < 0.01:
+		return true
+	return rad_to_deg(fwd.normalized().angle_to(to.normalized())) <= Balance.GUARD_FOV * 0.5
+
+
+## Куда страж реально смотрит: glTF-модель развёрнута в -Z, примитивный риг — в +Z.
+func _gaze_dir() -> Vector3:
+	var fwd: Vector3 = rig.global_transform.basis.z
+	if use_model:
+		fwd = -fwd
+	fwd.y = 0.0
+	return fwd
+
+
+func _path_clear(from: Vector3, to: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+func _has_los(t: Node3D) -> bool:
+	return _path_clear(global_position + Vector3(0, 1.5, 0), t.global_position + Vector3(0, 1.1, 0))
 
 
 func _patrol(_dt: float) -> void:
@@ -270,27 +488,56 @@ func _patrol(_dt: float) -> void:
 	_face(to)
 
 
+## Поиск: идёт к последней замеченной точке и осматривается.
+func _search(dt: float) -> void:
+	search_t -= dt
+	if not has_last:
+		state = "return"
+		state_t = 0.0
+		return
+	var to: Vector3 = last_seen - global_position
+	to.y = 0.0
+	if to.length() > 1.2:
+		velocity.x = to.normalized().x * speed
+		velocity.z = to.normalized().z * speed
+		_face(to)
+		scan_t = 0.0
+	else:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		scan_t += dt
+		rig.rotation.y += dt * 1.4
+
+
+func _return_to_post() -> void:
+	var to: Vector3 = home - global_position
+	to.y = 0.0
+	if to.length() < 1.0:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		state = "patrol"
+		state_t = 0.0
+		return
+	velocity.x = to.normalized().x * speed
+	velocity.z = to.normalized().z * speed
+	_face(to)
+
+
 func _face(dir: Vector3) -> void:
 	if dir.length() < 0.05:
 		return
-	rig.rotation.y = lerp_angle(rig.rotation.y, atan2(dir.x, dir.z), 0.2)
-
-
-func _can_see(t: Node3D) -> bool:
-	var from := global_position + Vector3(0, 1.5, 0)
-	var to := t.global_position + Vector3(0, 1.2, 0)
-	var space := get_world_3d().direct_space_state
-	var q := PhysicsRayQueryParameters3D.create(from, to)
-	q.collision_mask = 1
-	var hit := space.intersect_ray(q)
-	return hit.is_empty()
+	# у примитивного рига лицо в +Z, у glTF-модели — в -Z
+	var want := atan2(dir.x, dir.z)
+	if use_model:
+		want = atan2(-dir.x, -dir.z)
+	rig.rotation.y = lerp_angle(rig.rotation.y, want, 0.2)
 
 
 func _attack() -> void:
 	state = "attack"
 	state_t = 0.0
 	attack_cd = 1.3
-	Sfx.play("sfx_swing", -10.0, 0.9)
+	Sfx.play_at("sfx_swing", global_position + Vector3(0, 1.1, 0), -10.0, 0.9)
 	await get_tree().create_timer(0.35).timeout
 	if dead or target == null or not is_instance_valid(target):
 		return
@@ -305,8 +552,12 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	hp -= amount
 	flash = 0.18
 	stagger_t = 0.24
-	state = "chase"
-	Sfx.play("sfx_hit", -8.0)
+	alertness = Balance.GUARD_ALERT_MAX
+	lose_t = 0.0
+	has_last = true
+	last_seen = from if from != Vector3.ZERO else global_position
+	_start_chase()
+	Sfx.play_at("sfx_hit", global_position + Vector3(0, 1.1, 0), -8.0)
 	var away := global_position - from
 	away.y = 0
 	velocity += away.normalized() * 3.0
@@ -339,6 +590,9 @@ func _die() -> void:
 
 
 func _animate(dt: float) -> void:
+	if use_model:
+		_animate_model(dt)
+		return
 	var sp := Vector2(velocity.x, velocity.z).length()
 	if sp > 0.2:
 		phase += dt * 7.0
@@ -352,11 +606,13 @@ func _animate(dt: float) -> void:
 		# шаги
 		if not has_meta("step_t"):
 			set_meta("step_t", 0.0)
+		# патруль топает медленно и тихо, погоня — часто и громко
+		var hunting: bool = state in ["chase", "attack"]
 		var st: float = get_meta("step_t")
 		st += dt
-		if st > 0.4:
+		if st > (0.32 if hunting else 0.55):
 			st = 0.0
-			Sfx.play_varied("sfx_step", -24.0)
+			Sfx.play_at_varied("sfx_step", global_position, -22.0 if hunting else -28.0)
 		set_meta("step_t", st)
 	if state == "attack":
 		var t: float = clampf(state_t / 0.35, 0.0, 1.0)
@@ -369,6 +625,27 @@ func _animate(dt: float) -> void:
 		mat_cloth.albedo_color = Color(0.42, 0.09, 0.12)
 
 
+## Анимации модели: Idle/Walk/Attack/HitReact/Death (страж) и полёт (босс).
+func _animate_model(dt: float) -> void:
+	if anim == null:
+		return
+	var sp := Vector2(velocity.x, velocity.z).length()
+	if dead:
+		ModelUtil.play_key(anim, ["Die", "Death"], false)
+		return
+	if state == "attack":
+		ModelUtil.play_key(anim, ["Headbutt", "Punch"] if is_boss else ["Attack"], false, 1.0)
+	elif sp > 0.25:
+		ModelUtil.play_key(anim, ["Fast_Flying"] if is_boss else ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
+	else:
+		ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+	if flash_mat != null:
+		flash_mat.albedo_color.a = clampf(flash / 0.18, 0.0, 1.0) * 0.5
+	if model_root != null and is_boss:
+		# дракон чуть покачивается в воздухе
+		model_root.position.y = 0.45 + sin(Time.get_ticks_msec() / 620.0) * 0.06
+
+
 func _bark() -> void:
 	if bark_cd > 0.0 or barks.is_empty():
 		return
@@ -376,12 +653,16 @@ func _bark() -> void:
 	var text: String = barks[randi() % barks.size()]
 	var l := Label3D.new()
 	l.text = text
-	l.font_size = 40
-	l.pixel_size = 0.0045
+	l.font_size = 32
+	l.pixel_size = 0.0065
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.modulate = Color(0.95, 0.86, 0.7, 0.0)
-	l.outline_size = 10
-	l.position = Vector3(0, 2.35 if not is_boss else 3.1, 0)
+	l.outline_size = 8
+	l.position = Vector3(0, 2.35 if not is_boss else 3.3, 0)
+	var cam := get_viewport().get_camera_3d()
+	if cam:
+		var d: float = cam.global_position.distance_to(global_position)
+		l.scale = Vector3.ONE * clampf(d / 10.0, 0.3, 1.0)
 	add_child(l)
 	var tw := create_tween()
 	tw.tween_property(l, "modulate:a", 1.0, 0.2)
@@ -433,3 +714,4 @@ func _build_hurtbox() -> void:
 	cs.position = Vector3(0, 0.9 if not is_boss else 1.2, 0)
 	hurt.add_child(cs)
 	add_child(hurt)
+
