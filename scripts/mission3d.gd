@@ -136,7 +136,10 @@ func _add_flesh(pos: Vector3) -> void:
 		s.mesh = sph
 		var m := StandardMaterial3D.new()
 		m.albedo_color = Color(0.35, 0.06, 0.1)
-		m.roughness = 0.5
+		m.roughness = 0.85
+		m.emission_enabled = true
+		m.emission = Color(0.45, 0.05, 0.08)
+		m.emission_energy_multiplier = 0.35
 		s.material_override = m
 		s.position = Vector3(randf_range(-0.4, 0.4), 0.12, randf_range(-0.4, 0.4))
 		root.add_child(s)
@@ -149,9 +152,23 @@ func _add_flesh(pos: Vector3) -> void:
 	fleshes.append({"node": root, "used": false, "charges": 3})
 
 
+## Лёгкое покачивание и вращение: предметы читаются как «подбираемые».
+func _animate_pickups(dt: float) -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	for pk in pickups:
+		if pk["used"]:
+			continue
+		var node: Node3D = pk["node"]
+		if not is_instance_valid(node):
+			continue
+		node.position.y = float(pk["base_y"]) + sin(t * 1.6 + float(pk["phase"])) * 0.05
+		node.rotation.y += deg_to_rad(float(pk["spin"])) * dt
+
+
 func _process(_delta: float) -> void:
 	if ended or hero == null:
 		return
+	_animate_pickups(_delta)
 	_update_prompt()
 	_check_objectives()
 	if boss and is_instance_valid(boss) and not boss.dead:
@@ -226,8 +243,9 @@ func _absorb(f: Dictionary) -> void:
 	GameState.add_magic(25.0)
 	GameState.add_craving(3.0)
 	GameState.flesh_eaten += 1
-	Sfx.play("sfx_absorb", -6.0)
 	var root: Node3D = f["node"]
+	Sfx.play_at("sfx_absorb", root.global_position + Vector3(0, 0.2, 0), -6.0)
+	hero.emit_noise(Balance.NOISE_ABSORB)
 	if int(f["charges"]) <= 0:
 		f["used"] = true
 		var tw := create_tween()
@@ -245,19 +263,23 @@ func _absorb(f: Dictionary) -> void:
 
 
 func _break_door() -> void:
-	if GameState.magic < 10.0:
+	if GameState.magic < 20.0:
 		Sfx.play("sfx_lowmagic", -8.0)
 		return
-	GameState.spend_magic(10.0)
+	GameState.spend_magic(20.0)
 	door_open = true
 	Sfx.play("sfx_chain", -5.0)
+	hero.emit_noise(Balance.NOISE_CHAIN)
 	cam.shake(5.0, 0.3)
-	_remove_door_collision()
+	_remove_barrier_near(Vector3(13.0, 0.0, 54.0), 1.8)
 	_checkpoint()
 	_set_objective("Выйти в коридор")
 	busy = true
 	hero.control_enabled = false
-	await hud.say([{"name": "Торвин", "text": "Свобода. Пахнет сыростью и железом."}])
+	await hud.say([
+		{"name": "Торвин", "text": "Свобода. Пахнет сыростью и железом."},
+		{"name": "Торвин", "text": "В коридоре темно. Пригнусь — Ctrl. Тихо — Shift не жму. Камень (G) отвлечёт стражу."},
+	])
 	busy = false
 	hero.control_enabled = true
 
@@ -266,6 +288,7 @@ func _open_gate() -> void:
 	gate_open = true
 	Sfx.play("sfx_gate_open", -6.0)
 	cam.shake(4.0, 0.4)
+	_remove_barrier_near(Vector3(101.0, 0.0, 46.0), 1.8)
 	_set_objective("Пройти через казарму в кузню")
 
 
@@ -310,7 +333,7 @@ func _selena_talk() -> void:
 func _check_objectives() -> void:
 	var p := hero.global_position
 	if door_open and p.distance_to(Vector3(33, 0, 49)) < 9.0 and objective.find("Выйти") >= 0:
-		_set_objective("Пробраться мимо стражи к камере 13")
+		_set_objective("Пробраться мимо стражи (Ctrl — красться, G — камень)")
 	if not selena_done and p.distance_to(Vector3(45, 0, 55)) < 6.0 and objective.find("камера") < 0:
 		_set_objective("Камера 13: поговорить с пленницей (F)")
 	if not gate_open and p.distance_to(Vector3(81, 0, 57)) < 9.0 and objective.find("рычаг") < 0:
@@ -373,18 +396,10 @@ func _set_objective(text: String) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause"):
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			get_tree().paused = true
-			if hud:
-				hud.toggle_pause(true)
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-			get_tree().paused = false
-			if hud:
-				hud.toggle_pause(false)
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not get_tree().paused:
+	# паузу и курсор ведёт HUD (одно место на весь проект);
+	# здесь только возвращаем захват мыши кликом по миру после паузы
+	if event is InputEventMouseButton and event.pressed \
+			and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -427,23 +442,62 @@ func _make_pickup(kind: String, index: int, pos: Vector3, color: Color) -> void:
 	root.position = pos + Vector3(0, 0.55, 0)
 	add_child(root)
 	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.22, 0.28, 0.1) if kind == "note" else Vector3(0.26, 0.26, 0.26)
-	mi.mesh = mesh
 	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.emission_enabled = true
-	m.emission = color
-	m.emission_energy_multiplier = 1.4
+	if kind == "note":
+		# записка — свиток: лежит на боку, без «светящегося куба»
+		var roll := CylinderMesh.new()
+		roll.top_radius = 0.055
+		roll.bottom_radius = 0.055
+		roll.height = 0.26
+		roll.radial_segments = 12
+		mi.mesh = roll
+		mi.rotation_degrees = Vector3(0, 0, 90)
+		m.albedo_color = Color(0.86, 0.79, 0.6)
+		m.roughness = 0.9
+		m.emission_enabled = true
+		m.emission = color
+		m.emission_energy_multiplier = 0.18
+		var seal := MeshInstance3D.new()
+		var seal_mesh := SphereMesh.new()
+		seal_mesh.radius = 0.045
+		seal_mesh.height = 0.05
+		seal_mesh.radial_segments = 8
+		seal_mesh.rings = 3
+		seal.mesh = seal_mesh
+		var sm := StandardMaterial3D.new()
+		sm.albedo_color = Color(0.45, 0.1, 0.12)
+		sm.roughness = 0.7
+		seal.material_override = sm
+		seal.position = Vector3(0, 0.06, 0)
+		root.add_child(seal)
+	else:
+		# предмет — гранёный осколок с подсветкой по рёбрам
+		var gem := SphereMesh.new()
+		gem.radius = 0.16
+		gem.height = 0.38
+		gem.radial_segments = 6
+		gem.rings = 3
+		mi.mesh = gem
+		mi.rotation_degrees = Vector3(8, 35.0 * index, 0)
+		m.albedo_color = Color(0.55, 0.12, 0.14)
+		m.roughness = 0.25
+		m.metallic = 0.15
+		m.emission_enabled = true
+		m.emission = color
+		m.emission_energy_multiplier = 0.4
+		m.rim_enabled = true
+		m.rim = 0.25
+		m.rim_tint = 0.6
 	mi.material_override = m
-	mi.rotation_degrees = Vector3(0, 20.0 * index, 0)
 	root.add_child(mi)
 	var l := OmniLight3D.new()
 	l.light_color = color
-	l.light_energy = 0.9
-	l.omni_range = 2.6
+	l.light_energy = 0.7 if kind == "note" else 1.0
+	l.omni_range = 2.2
 	root.add_child(l)
-	pickups.append({"node": root, "kind": kind, "index": index, "used": false})
+	pickups.append({"node": root, "kind": kind, "index": index, "used": false,
+		"spin": 9.0 if kind == "note" else 26.0,
+		"base_y": root.position.y, "phase": float(index) * 0.8})
 
 
 func _lore_entry(kind: String, index: int) -> Dictionary:
@@ -520,7 +574,9 @@ func _restore_save() -> void:
 	GameState.boss_dead = boss_dead
 	GameState.stats_changed.emit()
 	if door_open:
-		_remove_door_collision()
+		_remove_barrier_near(Vector3(13.0, 0.0, 54.0), 1.8)
+	if gate_open:
+		_remove_barrier_near(Vector3(101.0, 0.0, 46.0), 1.8)
 	if boss_dead and boss != null and is_instance_valid(boss):
 		boss.queue_free()
 		boss = null
@@ -530,11 +586,26 @@ func _restore_save() -> void:
 	await hud.say([{"name": "Торвин", "text": "Снова этот камень. Снова этот воздух. Идём дальше."}])
 
 
-func _remove_door_collision() -> void:
+func _remove_barrier_near(center: Vector3, radius: float) -> void:
+	for c in barriers_near(center, radius):
+		c.queue_free()
+
+
+## Стойки-барьеры с коллизией в радиусе: нужно и разлому, и автотесту,
+## который проверяет, что «открытая» дверь перестала быть невидимой стеной.
+func barriers_near(center: Vector3, radius: float) -> Array:
+	var out: Array = []
 	for c in dungeon.get_children():
-		if c is StaticBody3D:
-			for s in c.get_children():
-				if s is CollisionShape3D:
-					var gp: Vector3 = s.global_position
-					if Vector2(gp.x - 13.0, gp.z - 53.0).length() < 1.8:
-						s.set_deferred("disabled", true)
+		if not (c is Node3D):
+			continue
+		var has_body := false
+		for ch in (c as Node).get_children():
+			if ch is StaticBody3D:
+				has_body = true
+				break
+		if not has_body:
+			continue
+		var gp := (c as Node3D).global_position
+		if Vector2(gp.x - center.x, gp.z - center.z).length() < radius:
+			out.append(c)
+	return out

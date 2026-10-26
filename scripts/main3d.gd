@@ -369,6 +369,11 @@ func _test_mode() -> void:
 	m._break_door()
 	await get_tree().create_timer(0.8).timeout
 	print("TEST door=", m.door_open, " magic=", GameState.magic, " objective=", m.objective)
+	# «решётку сломал» без снятия коллизии — невидимая стена вместо прохода
+	if m.barriers_near(Vector3(13.0, 0.0, 54.0), 1.8).size() > 0:
+		print("TEST FAIL: решётка камеры открыта, но коллизия на месте")
+		get_tree().quit()
+		return
 
 	# пауза (Esc): меню видно, дерево стоит; снятие паузы возвращает игру
 	m.hud.toggle_pause(true)
@@ -389,9 +394,25 @@ func _test_mode() -> void:
 	var front: Vector3 = g.global_position + g._gaze_dir() * 5.0
 	var back: Vector3 = g.global_position - g._gaze_dir() * 5.0
 	print("TEST cone front=", g._in_cone(front), " back=", g._in_cone(back))
-	g.hear_noise(g.global_position + Vector3(3, 0, 0), Balance.NOISE_THROW)
+	# край конуса: GUARD_FOV=60° — это ±30° от оси взгляда
+	var gaze: Vector3 = g._gaze_dir().normalized()
+	var edge_in: Vector3 = g.global_position + gaze.rotated(Vector3.UP, deg_to_rad(25.0)) * 5.0
+	var edge_out: Vector3 = g.global_position + gaze.rotated(Vector3.UP, deg_to_rad(38.0)) * 5.0
+	if not g._in_cone(edge_in) or g._in_cone(edge_out) or not g._in_cone(front) or g._in_cone(back):
+		print("TEST FAIL: конус зрения не 60° — in=", g._in_cone(edge_in),
+			" out=", g._in_cone(edge_out))
+		get_tree().quit()
+		return
+	var noise_at: Vector3 = g.global_position + Vector3(3, 0, 0)
+	g.hear_noise(noise_at, Balance.NOISE_THROW)
 	await get_tree().create_timer(0.2).timeout
-	print("TEST heard state=", g.state, " alert=", snappedf(g.alertness, 1.0))
+	print("TEST heard state=", g.state, " alert=", snappedf(g.alertness, 1.0),
+		" goal=", g.last_seen)
+	# именно так работает бросок камня (G): шум в точке падения уводит стражу
+	if g.state != "search" or g.last_seen.distance_to(noise_at) > 0.01:
+		print("TEST FAIL: страж не пошёл к точке шума — камень не отвлекает")
+		get_tree().quit()
+		return
 
 	# полная цепочка зрения: тёмный коридор, страж смотрит на героя → погоня
 	g.global_position = Vector3(33, 0, 49)
@@ -447,6 +468,10 @@ func _test_mode() -> void:
 	m._open_gate()
 	await get_tree().create_timer(0.3).timeout
 	print("TEST gate=", m.gate_open)
+	if m.barriers_near(Vector3(101.0, 0.0, 46.0), 1.8).size() > 0:
+		print("TEST FAIL: ворота казармы открыты, но коллизия на месте")
+		get_tree().quit()
+		return
 	m.boss.take_damage(999.0, Vector3.ZERO)
 	await get_tree().create_timer(1.6).timeout
 	print("TEST boss dead=", m.boss_dead, " objective=", m.objective)
