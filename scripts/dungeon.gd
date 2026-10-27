@@ -59,7 +59,6 @@ func build() -> void:
 	_shapes()
 	_build_floor()
 	_build_walls()
-	_build_cladding()
 	_build_ceiling()
 	_build_ribs()
 	_build_piers()
@@ -578,80 +577,6 @@ func _build_walls() -> void:
 		var jitter: float = rng.randf_range(-0.012, 0.012)
 		mmi.multimesh.set_instance_color(i,
 			Color(0.86 * shade + jitter, 0.87 * shade, 0.92 * shade - jitter))
-
-
-## Архитектурный рельеф граней стены: плинт, карниз, пилястр и каменная пыль
-## у пола. Мелкие блоки по всей плоскости читались как гофра поверх кирпичной
-## текстуры, поэтому рельеф редкий и крупный — он членит стену на прясла.
-func _build_cladding() -> void:
-	var faces: Array = []
-	for y in map_h:
-		for x in map_w:
-			if not grid[y][x] or pier[y][x]:
-				continue
-			for di in DIRS.size():
-				var dd: Vector2i = DIRS[di]
-				var ax: int = x + dd.x
-				var ay: int = y + dd.y
-				if not _in(ax, ay) or grid[ay][ax]:
-					continue
-				faces.append({"x": x, "y": y, "d": di, "h": ceil_h[ay][ax]})
-	var trim: Array = []
-	var chips: Array = []
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 20240
-	for f0 in faces:
-		var f: Dictionary = f0
-		var d: Vector2i = DIRS[int(f["d"])]
-		var n3 := Vector3(d.x, 0.0, d.y)
-		var tg := Vector3(-n3.z, 0.0, n3.x)
-		var b0 := Basis(tg, Vector3.UP, n3)
-		var cx := (int(f["x"]) + 0.5) * T
-		var cz := (int(f["y"]) + 0.5) * T
-		var plane := Vector3(cx, 0.0, cz) + n3 * (T * 0.5)
-		var top: float = float(f["h"])
-		rng.seed = int(f["x"]) * 7919 + int(f["y"]) * 104729 + int(f["d"]) * 313
-		# плинт и карниз: без них стена — это параллелепипед, висящий в воздухе
-		trim.append({"t": Transform3D(b0.scaled(Vector3(T + 0.04, 0.52, 0.2)),
-			plane + n3 * 0.1 + Vector3(0, 0.26, 0)), "k": 0})
-		trim.append({"t": Transform3D(b0.scaled(Vector3(T + 0.04, 0.26, 0.24)),
-			plane + n3 * 0.13 + Vector3(0, top - 0.2, 0)), "k": 1})
-		# пилястр — на каждую третью клетку, чтобы длинная стена получила членение
-		if (int(f["x"]) * 7 + int(f["y"]) * 13) % 3 == 0:
-			var pw := 0.56
-			var pd := 0.2
-			trim.append({"t": Transform3D(b0.scaled(Vector3(pw, top - 1.0, pd)),
-				plane + n3 * (pd * 0.5 - 0.01) + Vector3(0, top * 0.5, 0)), "k": 2})
-			trim.append({"t": Transform3D(b0.scaled(Vector3(pw + 0.2, 0.34, pd + 0.12)),
-				plane + n3 * ((pd + 0.12) * 0.5 - 0.01) + Vector3(0, 0.67, 0)), "k": 0})
-			trim.append({"t": Transform3D(b0.scaled(Vector3(pw + 0.2, 0.3, pd + 0.12)),
-				plane + n3 * ((pd + 0.12) * 0.5 - 0.01) + Vector3(0, top - 0.62, 0)), "k": 1})
-		# у самого пола каменная пыль и осколки: прямая линия «стена-пол»
-		# разрушает геометрию быстрее, чем любая кладка
-		for i in 3:
-			var off := rng.randf_range(-0.85, 0.85)
-			var ch: float = rng.randf_range(0.08, 0.2)
-			chips.append({"t": Transform3D(
-				Basis(Vector3.UP, rng.randf_range(0.0, PI)).scaled(
-					Vector3(rng.randf_range(0.12, 0.3), ch, rng.randf_range(0.12, 0.3))),
-				plane + tg * off + n3 * rng.randf_range(0.02, 0.14)
-					+ Vector3(0, ch * 0.35, 0)), "c": rng.randf()})
-	if trim.is_empty():
-		return
-	var box := BoxMesh.new()
-	box.size = Vector3(1, 1, 1)
-	var tmm := _multimesh(box, trim.size(), mat_cap)
-	for i in trim.size():
-		var t: Dictionary = trim[i]
-		tmm.multimesh.set_instance_transform(i, t["t"])
-		var warm: float = 0.06 if int(t["k"]) == 0 else 0.0
-		tmm.multimesh.set_instance_color(i, Color(0.86 + warm, 0.84, 0.79 - warm))
-	var cmm := _multimesh(box, chips.size(), mat_wall, false)
-	for i in chips.size():
-		var c: Dictionary = chips[i]
-		cmm.multimesh.set_instance_transform(i, c["t"])
-		var s2: float = 0.6 + float(c["c"]) * 0.4
-		cmm.multimesh.set_instance_color(i, Color(s2 * 0.9, s2 * 0.88, s2 * 0.82))
 
 
 ## Каменные арки поперёк узких проходов: низкий плоский потолок — вторая
@@ -1347,8 +1272,14 @@ func _prop(type: String, pos: Vector3) -> void:
 			for i in 6:
 				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_dark)
 		"stairs":
+			# Сплошные ступени с подступенками: пять отдельных плит висели
+			# в воздухе и читались как тонкие листы бумаги.
 			for i in 5:
-				_box(Vector3(2.0, 0.22, 0.5), pos + Vector3(0, 0.11 + i * 0.22, -i * 0.5), mat_wall)
+				var top: float = 0.22 * float(i + 1)
+				_box(Vector3(2.0, top, 0.5),
+					pos + Vector3(0, top * 0.5, -i * 0.5), mat_wall)
+				_box(Vector3(2.04, 0.04, 0.54),
+					pos + Vector3(0, top + 0.02, -i * 0.5), mat_cap)
 		"banner":
 			_banner_prop(pos)
 		"arch":

@@ -46,7 +46,6 @@ func build() -> void:
 	_shapes()
 	_build_floor()
 	_build_walls()
-	_build_cladding()
 	_build_ceiling()
 	_build_ribs()
 	_build_piers()
