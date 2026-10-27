@@ -449,7 +449,8 @@ func _refresh_progression() -> void:
 	level_label.text = "УР. %d" % GameState.level
 	var points: int = GameState.stat_points + GameState.skill_points
 	if points > 0:
-		points_label.text = "K — развитие: %d оч." % points
+		points_label.text = "K — развитие: %d хар. · %d нав." % [
+			GameState.stat_points, GameState.skill_points]
 	else:
 		points_label.text = ""
 	if r_icon != null:
@@ -473,7 +474,9 @@ func _on_xp_gained(amount: int) -> void:
 
 
 func _on_level_up(lvl: int) -> void:
-	toast("УРОВЕНЬ %d" % lvl, Color(1.0, 0.86, 0.5), 222.0, 14)
+	toast("УРОВЕНЬ %d  ·  +%d хар.  ·  +%d нав." % [
+		lvl, Balance.STAT_POINTS_PER_LEVEL, Balance.SKILL_POINTS_PER_LEVEL],
+		Color(1.0, 0.86, 0.5), 222.0, 14)
 	Sfx.play("sfx_trust", -8.0)
 	_refresh_progression()
 

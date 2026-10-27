@@ -24,6 +24,7 @@ const C_BORDER := Color(0.55, 0.45, 0.2, 0.9)
 var row_index := 0
 var res_value: Label
 var fs_value: Label
+var bob_value: Label
 var rows: Array[Label] = []
 var row_bases: Array[String] = []
 
@@ -91,9 +92,20 @@ func _build() -> void:
 	_arrow("‹", ARROW_L_X, y, func(): _change(-1))
 	_arrow("›", ARROW_R_X, y, func(): _change(1))
 
+	# --- покачивание камеры ---
+	y += 62.0
+	var bob_marker := _row_label("ПОКАЧИВАНИЕ", y)
+	rows.append(bob_marker)
+	bob_value = _value_label(y)
+	_hit_row(y, func():
+		_select(2)
+		_change(1))
+	_arrow("‹", ARROW_L_X, y, func(): _change(-1))
+	_arrow("›", ARROW_R_X, y, func(): _change(1))
+
 	var hint := Label.new()
 	hint.text = "← → изменить · ↑ ↓ строка · Esc — назад"
-	hint.position = Vector2(0, PANEL_Y + 244)
+	hint.position = Vector2(0, PANEL_Y + 274)
 	hint.size = Vector2(1280, 24)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 16)
@@ -102,7 +114,7 @@ func _build() -> void:
 
 	var back := Button.new()
 	back.text = "Назад"
-	back.position = Vector2(PANEL_X, PANEL_Y + 286)
+	back.position = Vector2(PANEL_X, PANEL_Y + 316)
 	back.size = Vector2(PANEL_W, 36)
 	back.flat = true
 	back.focus_mode = Control.FOCUS_NONE
@@ -171,6 +183,10 @@ func _refresh() -> void:
 	res_value.add_theme_color_override(
 		"font_color", C_DIM if Settings.fullscreen else C_ACCENT)
 	fs_value.text = "ВКЛ" if Settings.fullscreen else "ВЫКЛ"
+	if bob_value != null:
+		bob_value.text = Settings.bob_label()
+		bob_value.add_theme_color_override(
+			"font_color", C_DIM if Settings.camera_bob <= 0.001 else C_ACCENT)
 
 
 func _select(index: int) -> void:
@@ -185,8 +201,10 @@ func _select(index: int) -> void:
 func _change(step: int) -> void:
 	if row_index == 0:
 		Settings.cycle_resolution(step)
-	else:
+	elif row_index == 1:
 		Settings.toggle_fullscreen()
+	else:
+		Settings.cycle_camera_bob(step)
 	_refresh()
 
 

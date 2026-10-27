@@ -18,6 +18,8 @@ uniform float normal_scale = 1.0;
 uniform float roughness_mult = 0.85;
 uniform float metallic_value = 0.0;
 uniform float specular_value = 0.4;
+// Крупная вариация тона по миру: рвёт «обои» из повторяющейся кладки.
+uniform float macro_strength = 0.22;
 
 
 void fragment() {
@@ -54,9 +56,18 @@ void fragment() {
 	vec3 cz = vec3(nz.x, -nz.y, nz.z * sz);
 	vec3 nw = normalize(cx * aw.x + cy * aw.y + cz * aw.z);
 
+	// Медленная волна по миру в двух масштабах: пятна сырости и выцветания,
+	// которые не совпадают с сеткой блоков и не дают кладке тайлиться.
+	float macro = 0.5 + 0.5 * sin(wp.x * 0.55 + sin(wp.y * 0.8) * 1.7 + wp.z * 0.63);
+	// Вторая октава 1.5–3 м: первая волна слишком плавная и читается как
+	// градиент освещения, а не как неровность камня.
+	macro = macro * 0.68 + 0.32 * (0.5 + 0.5 * sin(wp.x * 1.35 - wp.z * 1.15
+		+ sin(wp.y * 2.1) * 2.2));
+	float macro_k = mix(1.0 - macro_strength, 1.0 + macro_strength * 0.5, macro);
+
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
-	ALBEDO = alb * tint.rgb * COLOR.rgb;
-	ROUGHNESS = clamp(rgh * roughness_mult, 0.05, 1.0);
+	ALBEDO = alb * tint.rgb * COLOR.rgb * macro_k;
+	ROUGHNESS = clamp(rgh * roughness_mult * mix(0.92, 1.06, macro), 0.05, 1.0);
 	METALLIC = metallic_value;
 	SPECULAR = specular_value;
 }

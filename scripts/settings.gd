@@ -15,6 +15,10 @@ const RES_LABELS: Array[String] = ["1280×720", "1600×900", "1920×1080", "2560
 
 var resolution_index := 0
 var fullscreen := true
+## Сила покачивания камеры: 0 — выключено, 1 — максимум. По умолчанию
+## оставляем лёгкое (35%), потому что полный bob укачивает в узких коридорах.
+var camera_bob := 0.20
+const BOB_STEPS: Array[float] = [0.0, 0.25, 0.5, 0.75, 1.0]
 
 
 func _ready() -> void:
@@ -32,12 +36,14 @@ func load_settings() -> void:
 		return
 	resolution_index = clampi(int(cfg.get_value("video", "resolution", 0)), 0, RESOLUTIONS.size() - 1)
 	fullscreen = bool(cfg.get_value("video", "fullscreen", true))
+	camera_bob = clampf(float(cfg.get_value("camera", "bob", 0.35)), 0.0, 1.0)
 
 
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("video", "resolution", resolution_index)
 	cfg.set_value("video", "fullscreen", fullscreen)
+	cfg.set_value("camera", "bob", camera_bob)
 	cfg.save(CONFIG_PATH)
 
 
@@ -86,3 +92,30 @@ func set_fullscreen(on: bool) -> void:
 
 func toggle_fullscreen() -> void:
 	set_fullscreen(not fullscreen)
+
+
+func bob_label() -> String:
+	if camera_bob <= 0.001:
+		return "ВЫКЛ"
+	return "%d%%" % int(round(camera_bob * 100.0))
+
+
+func set_camera_bob(value: float) -> void:
+	camera_bob = clampf(value, 0.0, 1.0)
+	save_settings()
+	changed.emit()
+
+
+func cycle_camera_bob(step: int) -> void:
+	if step > 0:
+		for v in BOB_STEPS:
+			if v > camera_bob + 0.001:
+				set_camera_bob(v)
+				return
+		set_camera_bob(1.0)
+	else:
+		for i in range(BOB_STEPS.size() - 1, -1, -1):
+			if BOB_STEPS[i] < camera_bob - 0.001:
+				set_camera_bob(BOB_STEPS[i])
+				return
+		set_camera_bob(0.0)

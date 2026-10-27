@@ -272,6 +272,10 @@ func _physics_process(delta: float) -> void:
 	flash = max(0.0, flash - delta)
 	stagger_t = max(0.0, stagger_t - delta)
 	if dead:
+		# труп не должен скользить: гасим остаток скорости погони/отдачи,
+		# иначе move_and_slide() продолжает тащить тело по полу.
+		velocity.x = move_toward(velocity.x, 0.0, 20.0 * delta)
+		velocity.z = move_toward(velocity.z, 0.0, 20.0 * delta)
 		velocity.y -= 18.0 * delta
 		move_and_slide()
 		return
@@ -603,6 +607,8 @@ func _die() -> void:
 	if dead:
 		return
 	dead = true
+	velocity.x = 0.0
+	velocity.z = 0.0
 	add_to_group("dead")
 	GameState.guards_killed += 1
 	GameState.add_xp(xp_reward)

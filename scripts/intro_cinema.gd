@@ -73,7 +73,10 @@ func _ready() -> void:
 	if player.stream == null:
 		push_error("Кинематик не загрузился: " + VIDEO)
 	else:
-		print("CINEMA OK length=", player.stream.get_length())
+		var length_sec = 0.0
+		if player.stream != null and player.stream.has_method("get_length"):
+			length_sec = float(player.stream.get_length())
+		print("CINEMA OK length=", length_sec)
 	player.size = Vector2(640, 360)
 	player.position = Vector2.ZERO
 	player.expand = true

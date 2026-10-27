@@ -25,7 +25,7 @@ var level := 1
 var xp := 0
 var stat_points := 0
 var skill_points := 0
-var stats := {"strength": 0, "vitality": 0, "spirit": 0}
+var stats := {"strength": 0, "agility": 0, "vitality": 0}
 var skills := {}            # id навыка -> ранг
 
 # статистика прохождения (влияет на концовку)
@@ -326,7 +326,6 @@ func get_max_health() -> float:
 
 func get_max_magic() -> float:
 	var bonus: float = float(level - 1) * Balance.LEVELUP_MANA
-	bonus += float(stats["spirit"]) * Balance.STAT_SPIRIT_MANA
 	bonus += float(skill_rank("blood_well")) * Balance.BLOOD_WELL_MANA
 	return MAX_MAGIC + bonus
 
@@ -337,6 +336,11 @@ func melee_damage_mult() -> float:
 	m += float(stats["strength"]) * Balance.STAT_STRENGTH_DMG
 	m += float(skill_rank("iron_arm")) * Balance.IRON_ARM_DMG
 	return m + get_damage_bonus() / 100.0
+
+
+## Множитель скорости передвижения от ловкости (шаг, бег, крадущийся шаг).
+func move_speed_mult() -> float:
+	return 1.0 + float(stats["agility"]) * Balance.STAT_AGILITY_SPEED
 
 
 ## Множитель урона заклинаний (шип, нова).
@@ -369,8 +373,8 @@ func add_xp(amount: int) -> void:
 			break
 		xp -= need
 		level += 1
-		stat_points += Balance.POINTS_PER_LEVEL
-		skill_points += Balance.POINTS_PER_LEVEL
+		stat_points += Balance.STAT_POINTS_PER_LEVEL
+		skill_points += Balance.SKILL_POINTS_PER_LEVEL
 		health = minf(get_max_health(), health + get_max_health() * Balance.LEVELUP_HEAL)
 		magic = minf(get_max_magic(), magic + get_max_magic() * Balance.LEVELUP_MANA_HEAL)
 		leveled = true
@@ -392,8 +396,6 @@ func add_stat(stat: String) -> bool:
 	stat_points -= 1
 	if stat == "vitality":
 		health = minf(get_max_health(), health + Balance.STAT_VITALITY_HP)
-	elif stat == "spirit":
-		magic = minf(get_max_magic(), magic + Balance.STAT_SPIRIT_MANA)
 	stats_changed.emit()
 	xp_changed.emit()
 	return true
@@ -429,7 +431,7 @@ func reset_progression() -> void:
 	xp = 0
 	stat_points = 0
 	skill_points = 0
-	stats = {"strength": 0, "vitality": 0, "spirit": 0}
+	stats = {"strength": 0, "agility": 0, "vitality": 0}
 	skills = {}
 	xp_changed.emit()
 	skills_changed.emit()
@@ -460,11 +462,14 @@ func apply_progression(data: Dictionary) -> void:
 	if saved_skills is Dictionary:
 		for key in saved_skills.keys():
 			skills[String(key)] = maxi(0, int(saved_skills[key]))
-	stats = {"strength": 0, "vitality": 0, "spirit": 0}
+	stats = {"strength": 0, "agility": 0, "vitality": 0}
 	var saved_stats = data.get("stats", {})
 	if saved_stats is Dictionary:
 		for key in stats.keys():
 			stats[key] = maxi(0, int(saved_stats.get(key, 0)))
+		# «Духа» больше нет: вложенные в него очки возвращаем в пул,
+		# чтобы старый чекпоинт не съел накопленную прокачку.
+		stat_points += maxi(0, int(saved_stats.get("spirit", 0)))
 	xp_changed.emit()
 	skills_changed.emit()
 	stats_changed.emit()

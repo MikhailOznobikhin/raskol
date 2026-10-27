@@ -320,11 +320,30 @@ func is_crouching() -> bool:
 	return crouching
 
 
+## Скорости с учётом ловкости: очки характеристик разгоняют шаг, бег и присед.
+func walk_speed() -> float:
+	return SPEED * GameState.move_speed_mult()
+
+
+func run_speed() -> float:
+	return RUN * GameState.move_speed_mult()
+
+
+func crouch_speed() -> float:
+	return CROUCH * GameState.move_speed_mult()
+
+
+## Порог «уже бегу» — середина между шагом и бегом. Без него после вложений
+## в ловкость обычный шаг переваливал бы за старые 4,4 м/с и включал бег.
+func run_threshold() -> float:
+	return (walk_speed() + run_speed()) * 0.5
+
+
 ## Множитель заметности: крадущийся шаг тише и незаметнее, бег — наоборот.
 func visibility_mult() -> float:
 	if crouching:
 		return 0.6
-	if Vector2(velocity.x, velocity.z).length() > SPEED + 0.3:
+	if Vector2(velocity.x, velocity.z).length() > walk_speed() + 0.3:
 		return 1.4
 	return 1.0
 
@@ -333,7 +352,7 @@ func noise_radius() -> float:
 	if crouching:
 		return Balance.NOISE_CROUCH
 	var sp := Vector2(velocity.x, velocity.z).length()
-	if sp > SPEED + 0.3:
+	if sp > walk_speed() + 0.3:
 		return Balance.NOISE_RUN
 	if sp > 0.4:
 		return Balance.NOISE_WALK
@@ -578,7 +597,7 @@ func _physics_process(delta: float) -> void:
 			if state_t > DODGE_TIME:
 				_set_state("idle")
 		"attack":
-			target_speed = SPEED * 0.25
+			target_speed = walk_speed() * 0.25
 			# 0.25 с — момент контакта в подрезанном клипе Slash (0.50 с при 2.0x)
 			if state_t > 0.25 and not attack_done:
 				attack_done = true
@@ -593,7 +612,7 @@ func _physics_process(delta: float) -> void:
 					combo_step = 0
 					_set_state("idle")
 		"heavy":
-			target_speed = SPEED * 0.1
+			target_speed = walk_speed() * 0.1
 			if state_t > HEAVY_WINDUP and not attack_done:
 				attack_done = true
 				_hit(true)
@@ -605,12 +624,12 @@ func _physics_process(delta: float) -> void:
 				_set_state("idle")
 		"cast":
 			# короткая пауза выброса руки — движение почти стоит
-			target_speed = SPEED * 0.15
+			target_speed = walk_speed() * 0.15
 			if state_t > 0.35:
 				_set_state("idle")
 		_:
 			var run := Input.is_action_pressed("sneak") and not crouching
-			target_speed = CROUCH if crouching else (RUN if run else SPEED)
+			target_speed = crouch_speed() if crouching else (run_speed() if run else walk_speed())
 			if input.length() < 0.1:
 				target_speed = 0.0
 	_handle_input()
@@ -810,9 +829,9 @@ func _set_state(s: String) -> void:
 func _animate(dt: float) -> void:
 	var speed := Vector2(velocity.x, velocity.z).length()
 	var moving := speed > 0.4
-	phase += dt * (6.0 if speed < 4.5 else 8.5) * (1.0 if moving else 0.0)
+	phase += dt * (6.0 if speed < run_threshold() else 8.5) * (1.0 if moving else 0.0)
 	var swing := sin(phase)
-	var amp: float = clampf(speed / RUN, 0.0, 1.0)
+	var amp: float = clampf(speed / run_speed(), 0.0, 1.0)
 
 	var l_target := 0.0
 	var r_target := 0.0
@@ -892,7 +911,7 @@ func _animate(dt: float) -> void:
 	# шаги: каждый шаг — событие шума для стражи
 	if moving and is_on_floor():
 		step_t += dt
-		if step_t > (0.55 if crouching else (0.42 if speed < 4.5 else 0.3)):
+		if step_t > (0.55 if crouching else (0.42 if speed < run_threshold() else 0.3)):
 			step_t = 0.0
 			Sfx.play_at_varied("sfx_step", global_position, -24.0 if not crouching else -30.0)
 			emit_noise(noise_radius())
@@ -1040,9 +1059,9 @@ func _animate_model(dt: float) -> void:
 		return
 	if anim_state != null and anim_state.has_method("travel"):
 		if speed > 0.45:
-			var running := speed > 4.4
+			var running := speed > run_threshold()
 			anim_state.travel("Run" if running else "Walk")
-			var base := RUN if running else SPEED
+			var base := run_speed() if running else walk_speed()
 			if anim_tree != null:
 				var sc := clampf(speed / base, 0.7, 1.6)
 				anim_tree.set("parameters/Walk/speed_scale", sc)
@@ -1051,8 +1070,8 @@ func _animate_model(dt: float) -> void:
 			anim_state.travel("Idle")
 	else:
 		if speed > 0.45:
-			var running := speed > 4.4
-			var base := RUN if running else SPEED
+			var running := speed > run_threshold()
+			var base := run_speed() if running else walk_speed()
 			ModelUtil.play_key(anim, ["Run"] if running else ["Walk"], true,
 				clampf(speed / base, 0.7, 1.6), 0.2)
 		else:

@@ -64,6 +64,7 @@ func _build_hud() -> void:
 	add_child(hud)
 	hud.transform = Transform2D(Vector2(2, 0), Vector2(0, 2), Vector2.ZERO)
 	hud.restart_requested.connect(func():
+		GameState.health = GameState.get_max_health()
 		get_tree().paused = false
 		get_parent().start_mission())
 	hud.menu_requested.connect(func():

@@ -71,7 +71,8 @@ const XP_BOSS := 400             # опыт за босса
 const XP_LEVEL_BASE := 100.0     # опыт на путь 1 → 2
 const XP_LEVEL_GROWTH := 1.55    # во сколько раз дороже каждый следующий уровень
 const LEVEL_MAX := 30
-const POINTS_PER_LEVEL := 1      # очков характеристик и навыков за уровень
+const STAT_POINTS_PER_LEVEL := 3  # очков характеристик за уровень
+const SKILL_POINTS_PER_LEVEL := 1 # очков навыков за уровень (магия, удары)
 const LEVELUP_HP := 12.0         # автоприрост здоровья за уровень
 const LEVELUP_MANA := 8.0        # автоприрост магии за уровень
 const LEVELUP_DMG := 0.04        # автоприрост урона за уровень (+4%)
@@ -81,8 +82,8 @@ const LEVELUP_MANA_HEAL := 0.25  # доля максимальной магии 
 # --- Характеристики (одно очко) ---
 const STAT_MAX_RANK := 20
 const STAT_STRENGTH_DMG := 0.08  # +8% урона за очко силы
+const STAT_AGILITY_SPEED := 0.02 # +2% скорости передвижения за очко ловкости
 const STAT_VITALITY_HP := 15.0   # +15 здоровья за очко живучести
-const STAT_SPIRIT_MANA := 12.0   # +12 магии за очко духа
 
 # --- Навыки развития ---
 const IRON_ARM_DMG := 0.10       # железная рука: +10% ближнего урона за ранг

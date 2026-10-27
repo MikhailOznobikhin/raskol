@@ -47,6 +47,8 @@ var flames: Array = []
 var shadow_t := 0.0
 var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
+## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
+var _grime_cache := {}
 
 
 func _ready() -> void:
@@ -67,6 +69,7 @@ func build() -> void:
 	_dress_rooms()
 	_scatter_torches()
 	_build_environment()
+	_add_atmosphere()
 
 
 func _tex(name: String) -> Texture2D:
@@ -120,12 +123,14 @@ func _make_mat(tex_name: String, tint: Color, rough: float, metal: float, uv: fl
 func _materials() -> void:
 	if not ResourceLoader.exists("res://assets/tex3d/stone_wall_albedo.png"):
 		push_warning("НЕТ ТЕКСТУР tex3d — стены будут плоскими")
-	mat_floor = _make_stone("stone_floor", Color(0.92, 0.92, 0.96), 0.72, 0.45, 1.3)
-	mat_wall = _make_stone("stone_wall", Color(0.88, 0.87, 0.9), 0.88, 0.4, 1.5)
-	# Нижняя грань свода почти не получает прямого света. Тёплый светлый тон
-	# и слабый разброс цвета не дают ей распасться на шахматку 2×2 м.
-	mat_ceil = _make_stone("stone_wall", Color(1.04, 1.0, 0.94), 0.94, 0.55, 0.9)
-	mat_cap = _make_stone("stone_wall", Color(0.95, 0.92, 0.87), 0.8, 0.9, 1.1)
+	# Этап A: у пола, стен, свода и трима разные роли. Холодный пол, тёплый
+	# камень стен и копчёный свод дают иерархию, которой не было у одного tint.
+	mat_floor = _make_stone("stone_floor", Color(0.87, 0.86, 0.85), 0.68, 0.45, 1.3)
+	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.4, 1.5)
+	# Свод не должен спорить с полом: копчёный холодный камень уходит в тень,
+	# а тёплый свет остаётся на стенах и реквизите.
+	mat_ceil = _make_stone("stone_wall", Color(0.55, 0.53, 0.52), 0.98, 0.55, 0.9)
+	mat_cap = _make_stone("stone_wall", Color(0.95, 0.88, 0.76), 0.75, 0.9, 1.1)
 	mat_metal = _make_mat("metal", Color(0.8, 0.82, 0.9), 0.45, 0.85, 1.2)
 	mat_wood = _make_mat("wood", Color(0.9, 0.85, 0.8), 0.8, 0.0, 1.0)
 	mat_dark = StandardMaterial3D.new()
@@ -763,49 +768,254 @@ func _build_collision() -> void:
 		body.add_child(sc)
 
 
+## Уже есть свет в этом радиусе — новый факел не нужен.
+func _light_near(pos: Vector3, radius: float) -> bool:
+	var probe := pos + Vector3(0, 1.4, 0)
+	for entry in lights:
+		var l: OmniLight3D = entry.get("light")
+		if l != null and is_instance_valid(l) \
+				and l.global_position.distance_to(probe) < radius:
+			return true
+	return false
+
+
 func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.015, 0.018, 0.025)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.37, 0.41, 0.52)
-	env.ambient_light_energy = 0.70
+	# Увеличим ambient light, чтобы дальние комнаты не были чёрными
+	env.ambient_light_color = Color(0.44, 0.43, 0.47)
+	# Этап A: меньше «серого молока», больше роли у факелов и контрового света.
+	env.ambient_light_energy = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.10
+	env.tonemap_exposure = 1.5
 	env.glow_enabled = true
-	env.glow_intensity = 0.45
-	env.glow_bloom = 0.08
+	env.glow_intensity = 0.34
+	env.glow_bloom = 0.05
 	env.glow_hdr_threshold = 1.1
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.06, 0.07, 0.1)
-	env.fog_density = 0.018
+	env.fog_light_color = Color(0.085, 0.09, 0.115)
+	# Немного реже Dense fog, чтобы свет доходил дальше
+	env.fog_density = 0.009
 	env.ssao_enabled = true
-	# радиус 1,5 м в двухметровом коридоре затемняет почти всё: поверхность
-	# считает себя закрытой наполовину, и ambient не достаёт ни до стены,
-	# ни до потолка. Мягкая тень нужна на уровне швов, а не на уровне помещения.
-	env.ssao_radius = 0.55
-	env.ssao_intensity = 0.8
+	# Контактные тени в стыках кладки: без них камень выглядит пластиком.
+	env.ssao_radius = 0.9
+	env.ssao_intensity = 1.0
+	# SSIL добивает свет в углах и на нижних гранях свода, где ambient слаб.
+	env.ssil_enabled = true
+	env.ssil_radius = 2.0
+	env.ssil_intensity = 1.2
+	env.ssil_sharpness = 0.98
 	# объёмный туман даёт световые конусы от факелов; плотность низкая,
 	# чтобы не съедать fps на ноутбучной видеокарте
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.022
+	env.volumetric_fog_density = 0.013
 	env.volumetric_fog_albedo = Color(0.62, 0.66, 0.78)
 	env.volumetric_fog_emission_energy = 0.0
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_length = 40.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.14
-	env.adjustment_saturation = 1.02
+	env.adjustment_brightness = 1.08
+	env.adjustment_contrast = 1.1
+	env.adjustment_saturation = 0.98
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	# холодный заполняющий свет: без него коридор утопает в красно-коричневом
 	var fill := DirectionalLight3D.new()
-	fill.light_color = Color(0.62, 0.68, 0.85)
-	fill.light_energy = 0.24
+	fill.light_color = Color(0.58, 0.66, 0.86)
+	fill.light_energy = 0.42
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-55.0, 32.0, 0.0)
 	add_child(fill)
+
+
+# ---------------------------------------------------------------------------
+# этап A: атмосфера (косые лучи, пыль, копоть, мох, сырость)
+
+func _add_atmosphere() -> void:
+	_add_light_shafts()
+	_add_grime_decals()
+
+
+## Два холодных конуса из щелей свода: дают контровой свет и видимый объём
+## туману. Тени не включаем: теневой бюджет занят факелами у игрока.
+func _add_light_shafts() -> void:
+	# Два зала на маршруте камеры: коридор у старта и зал с колоннами.
+	# Случайный поиск уводил лучи в невидимые комнаты на другом конце карты.
+	var anchors := [Vector3(46.0, 0.0, 50.0), Vector3(58.0, 0.0, 44.0)]
+	var cells: Array[Vector2i] = []
+	for a in anchors:
+		var c := _nearest_open_cell(a)
+		if not cells.has(c):
+			cells.append(c)
+	for i in mini(2, cells.size()):
+		var c: Vector2i = cells[i]
+		var top: float = cell_ceil(c.x, c.y)
+		var center := cell_center(c.x, c.y)
+		var spot := SpotLight3D.new()
+		spot.light_color = Color(0.55, 0.68, 1.0)
+		spot.light_energy = 8.0
+		spot.spot_range = top + 1.0
+		spot.spot_angle = 30.0
+		spot.spot_attenuation = 1.2
+		spot.shadow_enabled = false
+		spot.position = center + Vector3(0, top - 0.12, 0)
+		# SpotLight3D светит вдоль -Z; поворот на -90° направляет его вниз.
+		spot.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+		add_child(spot)
+		_add_dust(center, top)
+
+
+## Пыль в луче: дешёвые частицы на весь объём зала, без оверлея на экран.
+func _add_dust(center: Vector3, top: float) -> void:
+	var p := GPUParticles3D.new()
+	p.amount = 24
+	p.lifetime = 9.0
+	p.preprocess = 5.0
+	p.local_coords = true
+	p.visibility_aabb = AABB(Vector3(-3.0, -top, -3.0), Vector3(6.0, top * 2.0, 6.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(1.6, top * 0.32, 1.6)
+	pm.direction = Vector3(0.0, 1.0, 0.0)
+	pm.spread = 35.0
+	pm.initial_velocity_min = 0.02
+	pm.initial_velocity_max = 0.09
+	pm.gravity = Vector3(0.0, -0.01, 0.0)
+	pm.scale_min = 0.4
+	pm.scale_max = 1.5
+	pm.color = Color(0.85, 0.82, 0.72, 0.55)
+	p.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.035, 0.035)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_texture = _radial_glow_texture()
+	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.55)
+	quad.material = mat
+	p.draw_pass_1 = quad
+	p.position = center + Vector3(0, top * 0.5, 0)
+	add_child(p)
+
+
+## Копоть над огнём, мох у пола и лужицы: процедурные Decal вместо новых
+## текстур, чтобы грязь не повторялась и не стоила ассетов.
+func _add_grime_decals() -> void:
+	var soot := _grime_texture("soot")
+	var moss := _grime_texture("moss")
+	var wet := _grime_texture("wet")
+	var soot_n := 0
+	for entry in lights:
+		if soot_n >= 10:
+			break
+		var l: OmniLight3D = entry.get("light")
+		if l == null or not is_instance_valid(l):
+			continue
+		var wall := _nearest_wall(l.global_position)
+		if wall.is_empty():
+			continue
+		var n: Vector3 = wall["normal"]
+		var p: Vector3 = wall["pos"] + n * 0.05
+		p.y = clampf(l.global_position.y + 0.75, 2.2, WALL_H + 0.6)
+		_decal(p, n, Vector3(2.4, 0.7, 2.2), soot, Color(1, 1, 1, 0.8))
+		soot_n += 1
+
+	var moss_n := 0
+	for y in range(1, map_h - 1):
+		for x in range(1, map_w - 1):
+			if moss_n >= 7:
+				break
+			if grid[y][x] or (x * 11 + y * 17) % 29 != 0:
+				continue
+			var wall := _nearest_wall(cell_center(x, y))
+			if wall.is_empty():
+				continue
+			var n: Vector3 = wall["normal"]
+			var p: Vector3 = wall["pos"] + n * 0.04
+			p.y = 0.35
+			_decal(p, n, Vector3(1.6, 0.45, 1.2), moss, Color(1, 1, 1, 0.65))
+			moss_n += 1
+
+	var wet_n := 0
+	for y in range(1, map_h - 1):
+		for x in range(1, map_w - 1):
+			if wet_n >= 5:
+				break
+			if grid[y][x] or (x * 7 + y * 19) % 41 != 0:
+				continue
+			var p := cell_center(x, y) + Vector3(0, 0.06, 0)
+			_decal(p, Vector3.UP, Vector3(1.4, 0.5, 1.1), wet, Color(1, 1, 1, 0.8))
+			wet_n += 1
+
+
+## Ближайшая к точке стена: позиция на её лице и нормаль в сторону комнаты.
+func _nearest_wall(pos: Vector3) -> Dictionary:
+	var tx := int(floor(pos.x / T))
+	var ty := int(floor(pos.z / T))
+	for d in DIRS:
+		var nx: int = tx + d.x
+		var ny: int = ty + d.y
+		if not _in(nx, ny) or not grid[ny][nx]:
+			continue
+		return {
+			"pos": Vector3((nx + 0.5) * T - d.x * T * 0.5, 0.0,
+				(ny + 0.5) * T - d.y * T * 0.5),
+			"normal": Vector3(-d.x, 0.0, -d.y),
+		}
+	return {}
+
+
+func _decal(pos: Vector3, normal: Vector3, size_v: Vector3, tex: Texture2D,
+		tint: Color) -> void:
+	var d := Decal.new()
+	d.texture_albedo = tex
+	d.size = size_v
+	d.modulate = tint
+	d.albedo_mix = 1.0
+	d.cull_mask = 1
+	# Decal проецирует вдоль локальной -Y: ставим Y вдоль нормали стены/пола.
+	var y := normal.normalized()
+	var x := y.cross(Vector3.UP)
+	if x.length() < 0.01:
+		x = y.cross(Vector3.RIGHT)
+	x = x.normalized()
+	var z := x.cross(y).normalized()
+	d.basis = Basis(x, y, z)
+	d.position = pos
+	add_child(d)
+
+
+## Мягкое пятно с неровным краем: копоть, мох или сырость.
+func _grime_texture(kind: String) -> Texture2D:
+	if _grime_cache.has(kind):
+		return _grime_cache[kind]
+	var w := 128
+	var h := 128
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var u := float(x) / float(w)
+			var v := float(y) / float(h)
+			var dx := u - 0.5
+			var dy := v - 0.5
+			var fall := clampf(1.0 - sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0)
+			var n := 0.5 + 0.5 * sin(u * 21.0 + sin(v * 13.0) * 2.3) \
+				* sin(v * 17.0 + sin(u * 9.0) * 2.0)
+			var a := fall * (0.25 + 0.75 * n)
+			var c := Color(0.06, 0.09, 0.11, a * 0.55)
+			if kind == "soot":
+				c = Color(0.03, 0.02, 0.015, a * 0.85)
+			elif kind == "moss":
+				c = Color(0.1, 0.14, 0.06, a * 0.7)
+			img.set_pixel(x, y, c)
+	var tex := ImageTexture.create_from_image(img)
+	_grime_cache[kind] = tex
+	return tex
 
 
 # ---------------------------------------------------------------------------
@@ -1072,8 +1282,8 @@ func _brazier_prop(pos: Vector3) -> void:
 	flames.append(flame)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.5, 0.2)
-	light.light_energy = 4.0
-	light.omni_range = 10.0
+	light.light_energy = 3.6
+	light.omni_range = 9.0
 	light.shadow_enabled = true
 	light.position = Vector3(0, 1.35, 0)
 	root.add_child(light)
@@ -1188,8 +1398,8 @@ func _torch(pos: Vector3) -> void:
 
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.62, 0.28)
-	light.light_energy = 5.0
-	light.omni_range = 14.0
+	light.light_energy = 5.5
+	light.omni_range = 12.0
 	light.omni_attenuation = 1.0
 	light.shadow_enabled = true
 	# лампа выше языка пламени: так свет не оказывается внутри меша
@@ -1228,6 +1438,10 @@ func _light_clear(from: Vector3, to: Vector3) -> bool:
 func _prop(type: String, pos: Vector3) -> void:
 	match type:
 		"torch":
+			# Второй факел в трёх метрах от первого только пересвечивает
+			# комнату и съедает теневой бюджет.
+			if _light_near(pos, 3.2):
+				return
 			_torch(pos)
 		"brazier", "forge_fire":
 			_brazier_prop(pos)
@@ -1345,7 +1559,7 @@ func _prop(type: String, pos: Vector3) -> void:
 			coals.scale = Vector3(1, 0.4, 1)
 			var light := OmniLight3D.new()
 			light.light_color = Color(1.0, 0.5, 0.2)
-			light.light_energy = 3.0
+			light.light_energy = 3.4
 			light.omni_range = 9.0
 			light.shadow_enabled = true
 			light.position = pos + Vector3(0, 1.9, 0)
@@ -1419,10 +1633,10 @@ func _process(delta: float) -> void:
 			ranked.append({"l": li, "d": li.global_position.distance_to(center)})
 		ranked.sort_custom(func(a, b): return a["d"] < b["d"])
 		for i in ranked.size():
-			ranked[i]["l"].shadow_enabled = i < 3 and ranked[i]["d"] < 16.0
+			ranked[i]["l"].shadow_enabled = i < 4 and ranked[i]["d"] < 15.0
 
 
-func _scatter_torches(max_count: int = 14) -> void:
+func _scatter_torches(max_count: int = 12) -> void:
 	"""Ставит факелы вдоль стен, чтобы коридоры не были чёрными."""
 	var placed := 0
 	var step := 7
@@ -1448,6 +1662,8 @@ func _scatter_torches(max_count: int = 14) -> void:
 			if (x * 5 + y * 11) % step != 0:
 				continue
 			var pos := cell_center(x, y) + out * (T * 0.5 - 0.3)
+			if _light_near(pos, 2.6):
+				continue
 			_torch(pos)
 			# у декоративных факелов тени отключаем: иначе теневой атлас
 			# переполняется и свет пропадает
@@ -1462,6 +1678,9 @@ func _dress_rooms() -> void:
 		"bed": [Vector3(24, 0, 62), Vector3(100, 0, 36), Vector3(88, 0, 30)],
 		"rubble": [Vector3(34, 0, 58), Vector3(70, 0, 50), Vector3(50, 0, 40), Vector3(104, 0, 46)],
 		"rack": [Vector3(30, 0, 50), Vector3(86, 0, 34), Vector3(45, 0, 28)],
+		# Стартовая камера: один тёплый ключ у решётки, иначе первый кадр
+		# остаётся тёмным пятном без читаемого силуэта.
+		"brazier_stand": [Vector3(9, 0, 54)],
 		"pillar": [Vector3(38, 0, 54), Vector3(66, 0, 48), Vector3(78, 0, 42)],
 		"arch": [Vector3(48, 0, 50), Vector3(58, 0, 44)],
 	}

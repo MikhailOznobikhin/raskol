@@ -15,9 +15,9 @@ const C_DIM := Color(0.58, 0.56, 0.5)
 const C_ACCENT := Color(1.0, 0.92, 0.72)
 const C_BORDER := Color(0.55, 0.45, 0.2, 0.9)
 
-const STAT_IDS := ["strength", "vitality", "spirit"]
-const STAT_TITLES := ["СИЛА", "ЖИВУЧЕСТЬ", "ДУХ"]
-const STAT_DESCS := ["+8% урона в ближнем бою", "+15 к максимуму здоровья", "+12 к максимуму магии"]
+const STAT_IDS := ["strength", "agility", "vitality"]
+const STAT_TITLES := ["СИЛА", "ЛОВКОСТЬ", "ЗДОРОВЬЕ"]
+const STAT_DESCS := ["+8% урона в ближнем бою", "+2% скорости передвижения", "+15 к максимуму здоровья"]
 
 var header: Label
 var stat_values: Array[Label] = []
@@ -102,8 +102,8 @@ func _build() -> void:
 		stat_buttons.append(b)
 
 	var hint := _label(
-		"Очки дают уровни: за опыт с врагов.\n"
-		+ "Сила — урон, живучесть — здоровье, дух — магия.\n"
+		"За уровень: 3 очка характеристик и 1 очко навыков.\n"
+		+ "Сила — урон, ловкость — скорость, здоровье — запас HP.\n"
 		+ "Навыки открываются с определённого уровня.",
 		Vector2(PANEL_X + 40, PANEL_Y + 380), Vector2(430, 90), 13, C_DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

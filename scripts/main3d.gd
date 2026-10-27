@@ -514,8 +514,18 @@ func _test_mode() -> void:
 	# --- прокачка: опыт за убийство, уровень, очки ---
 	print("TEST xp level=", GameState.level, " xp=", GameState.xp, " need=", GameState.xp_need(),
 		" stat_points=", GameState.stat_points, " skill_points=", GameState.skill_points)
-	if GameState.level < 2 or GameState.stat_points < 1 or GameState.skill_points < 1:
+	# за уровень — независимые пулы: 3 очка характеристик и 1 очко навыков
+	if GameState.level < 2 \
+			or GameState.stat_points != Balance.STAT_POINTS_PER_LEVEL \
+			or GameState.skill_points != Balance.SKILL_POINTS_PER_LEVEL:
 		print("TEST FAIL: за стража не дали опыт/уровень/очки")
+		get_tree().quit()
+		return
+	var speed0: float = GameState.move_speed_mult()
+	GameState.add_stat("agility")
+	print("TEST stat agility speed=", snappedf(GameState.move_speed_mult(), 0.01), " было=", speed0)
+	if GameState.move_speed_mult() <= speed0:
+		print("TEST FAIL: ловкость не подняла скорость героя")
 		get_tree().quit()
 		return
 	var hp_max0: float = GameState.get_max_health()
@@ -523,6 +533,13 @@ func _test_mode() -> void:
 	print("TEST stat vitality hp_max=", GameState.get_max_health(), " было=", hp_max0)
 	if GameState.get_max_health() <= hp_max0:
 		print("TEST FAIL: живучесть не подняла максимум здоровья")
+		get_tree().quit()
+		return
+	var melee0: float = GameState.melee_damage_mult()
+	GameState.add_stat("strength")
+	print("TEST stat strength melee=", snappedf(GameState.melee_damage_mult(), 0.01), " было=", melee0)
+	if GameState.melee_damage_mult() <= melee0:
+		print("TEST FAIL: сила не подняла урон в ближнем бою")
 		get_tree().quit()
 		return
 	if not GameState.unlock_skill("iron_arm"):
