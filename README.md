@@ -6,6 +6,9 @@
 ![Главное меню](docs/screenshots/3d_menu.png)
 ![Камера от третьего лица в камере-одиночке](docs/screenshots/3d_cell.png)
 
+> Актуальный план развития: [`docs/07_NEXT_ROADMAP.md`](docs/07_NEXT_ROADMAP.md).
+> Текущие визуальные дефекты: [`docs/08_VISUAL_BUGS.md`](docs/08_VISUAL_BUGS.md).
+
 ## Как запустить
 
 `build\Raskol.exe` — автономный Windows-билд. Или `Play.cmd` в корне проекта.
