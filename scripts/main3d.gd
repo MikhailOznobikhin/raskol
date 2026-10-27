@@ -41,6 +41,11 @@ func _register_input() -> void:
 	_add_action("choice_1", [KEY_1])
 	_add_action("choice_2", [KEY_2])
 	_add_action("choice_3", [KEY_3])
+	# Экшены Wyvernbox: без них аддон зовёт Input.is_action_pressed на несуществующий
+	# экшен и тултип с перетаскиванием падают на каждой кнопке мыши.
+	_add_action("inventory_more", [KEY_SHIFT])
+	_add_action("inventory_less", [KEY_ALT])
+	_add_action("inventory_filter", [KEY_F])
 	if not InputMap.has_action("attack"):
 		InputMap.add_action("attack")
 	var mb := InputEventMouseButton.new()
@@ -212,7 +217,79 @@ func _shots_mode() -> void:
 		m.hud._open_settings()
 		await get_tree().create_timer(0.6).timeout
 		await _shot("3d_pause_settings")
+	# инвентарь Wyvernbox: проверяем вёрстку панели, слоты экипировки, сетку сумки
+	# и тултип. Предметы кладём в GameState прямо здесь — экран их подхватывает сам.
+	if m and m.hud:
+		m.hud.toggle_pause(false)
+		for id in ["potion_heal", "scroll_fire", "ring_power", "cloak_shadow",
+				"boots_wanderer", "amulet_ward"]:
+			GameState.add_item(ItemCatalog.source(id))
+		m.hud._open_inventory()
+		# view пересобирается с задержкой в кадр, а стопки едут в ячейки не сразу
+		await get_tree().create_timer(0.8).timeout
+		var inv = m.hud.inventory_root
+		await _mouse_equip_check(inv)
+		# Наводим на последнюю заполненную ячейку: тултип раскрывается вправо
+		# и не закрывает собой остальные предметы сумки.
+		var shown = inv.bag_view.get_item_view_at_position(4, 0) if inv != null else null
+		if is_instance_valid(shown):
+			shown.notification(Control.NOTIFICATION_MOUSE_ENTER)
+		await get_tree().create_timer(0.4).timeout
+		await _shot("3d_inventory")
+		if is_instance_valid(shown):
+			shown.notification(Control.NOTIFICATION_MOUSE_EXIT)
+		m.hud.toggle_inventory(false)
 	get_tree().quit()
+
+
+## Проверка инвентаря НАСТОЯЩИМ курсором — то, чего не может headless-тест:
+## там метрики окна недостоверны и клик в пустоту проходит «сам по себе».
+## Берём амулет из сумки кликом, ведём мышь в слот амулета, кадрируем предмет
+## под курсором и кликаем в слот. Если экран висит на масштабированном слое,
+## аддон выбирает ячейку по удвоенным координатам: предмет не берётся, «рука»
+## уезжает от курсора, а нажатие в слот надевает не то (или ничего).
+func _mouse_equip_check(inv) -> void:
+	if inv == null:
+		print("SHOT FAIL: экран инвентаря не открылся")
+		return
+	var src = null
+	for st in inv.bag_view.inventory.items:
+		if st != null and String(st.item_type.resource_name) == "amulet_ward":
+			src = st
+			break
+	if src == null:
+		print("SHOT FAIL: амулет не лёг в сумку экрана")
+		return
+	var from = inv.bag_view.get_item_view_at_positionv(src.position_in_inventory)
+	if not is_instance_valid(from):
+		print("SHOT FAIL: ячейка амулета не отрисована")
+		return
+	await _mouse_click(from.get_global_rect().get_center())
+	await get_tree().create_timer(0.35).timeout
+	var held = GrabbedItemStackView.get_instance()
+	var grabbed: bool = is_instance_valid(held) and held.stack == src
+	var amulet_idx: int = GameState.EQUIP_SLOTS.find("amulet")
+	var slot: Control = inv.equip_view.get_node("Cells").get_child(amulet_idx)
+	var slot_pos: Vector2 = slot.get_global_rect().get_center()
+	_mouse_move(slot_pos)
+	await get_tree().create_timer(0.35).timeout
+	# центр предмета в «руке» должен совпасть с курсором: расхождение и есть
+	# тот самый «съезжающий» предмет
+	var drift := 1e9
+	if is_instance_valid(held) and held.visible:
+		drift = (held.global_position + held.size * 0.5 * held.scale).distance_to(slot_pos)
+	# ячейка, которую аддон выбрал по настоящей позиции мыши
+	var target: Vector2 = inv.equip_view.selected_cell
+	await _shot("3d_inventory_drag")
+	await _mouse_click(slot_pos)
+	await get_tree().create_timer(0.35).timeout
+	var worn = GameState.equipped.get("amulet")
+	var worn_ok: bool = worn is Dictionary and String(worn.get("id", "")) == "amulet_ward"
+	print("SHOT mouse grab=", grabbed, " drift=", snappedf(drift, 0.1),
+		" target=", target, " want=", Vector2(amulet_idx, 0), " amulet_worn=", worn_ok)
+	if not grabbed or drift > 2.0 or target != Vector2(amulet_idx, 0) or not worn_ok:
+		print("SHOT FAIL: инвентарь не слушается реального курсора")
+
 
 
 ## Витрина оружия в руке: герой с трёх сторон, чтобы подобрать поворот в кисти.
@@ -368,6 +445,38 @@ func _shot(name: String) -> void:
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("res://tools/shot_%s.png" % name)
 	print("SHOT ", name, " ", img.get_width(), "x", img.get_height())
+
+
+## Наведение настоящего курсора: warp_mouse двигает системную мышь — из этого
+## получается и настоящее событие движения (по нему аддон выбирает ячейку), и
+## позиция предмета в «руке». parse_input_event дублирует то же движение, чтобы
+## кадр не зависел от того, успела ли ОС доставить свой WM_MOUSEMOVE.
+func _mouse_move(pos: Vector2) -> void:
+	Input.warp_mouse(pos)
+	Input.parse_input_event(_mouse_motion(pos))
+
+
+func _mouse_motion(pos: Vector2) -> InputEventMouseMotion:
+	var mv := InputEventMouseMotion.new()
+	mv.position = pos
+	mv.global_position = pos
+	return mv
+
+
+## Полный клик ЛКМ в точке pos: наведение, нажатие, отпускание. Именно так
+## выглядит перетаскивание в инвентаре для игрока.
+func _mouse_click(pos: Vector2) -> void:
+	_mouse_move(pos)
+	await get_tree().create_timer(0.12).timeout
+	var b := InputEventMouseButton.new()
+	b.position = pos
+	b.global_position = pos
+	b.button_index = MOUSE_BUTTON_LEFT
+	b.pressed = true
+	Input.parse_input_event(b)
+	await get_tree().create_timer(0.12).timeout
+	b.pressed = false
+	Input.parse_input_event(b)
 
 
 func _test_mode() -> void:
@@ -618,17 +727,113 @@ func _test_mode() -> void:
 		return
 	m.hud._open_inventory()
 	await get_tree().process_frame
-	var inv: Control = m.hud.inventory_root
+	var inv = m.hud.inventory_root
 	print("TEST inventory open=", inv != null, " paused=", get_tree().paused)
 	if inv == null:
 		print("TEST FAIL: экран инвентаря не открылся")
 		get_tree().quit()
 		return
+	# --- пространство координат: аддон переводит экранную позицию мыши в ячейку
+	# через get_global_transform(), который не видит трансформ CanvasLayer.
+	# На растянутом ×2 слое HUD клик попадал в удвоенную позицию, а предмет в
+	# «руке» уезжал от курсора — инвентарём было нельзя пользоваться.
+	# Поэтому экран обязан висеть на собственном слое без масштаба. В headless
+	# метрики окна недостоверны, так что здесь только структурная проверка,
+	# а настоящий курсор смотрим в кадре -Shots.
+	var host: CanvasLayer = inv.get_parent() as CanvasLayer
+	var identity: bool = host != null and host.transform == Transform2D()
+	print("TEST layer identity=", identity, " hud_scaled=",
+		m.hud.transform.get_scale() != Vector2.ONE)
+	if not identity:
+		print("TEST FAIL: экран инвентаря висит на трансформированном слое")
+		get_tree().quit()
+		return
+	var amulet = ItemCatalog.stack("amulet_ward", 1)
+	if amulet == null or inv.bag_view.inventory.try_add_item(amulet) != 1:
+		print("TEST FAIL: амулет не лёг в сумку экрана")
+		get_tree().quit()
+		return
+	await get_tree().create_timer(0.3).timeout
+	var bag_cell0 = inv.bag_view.get_item_view_at_position(0, 0)
+	var amulet_idx: int = GameState.EQUIP_SLOTS.find("amulet")
+	var eq_rect: Rect2 = inv.equip_view.get_node("Cells").get_child(amulet_idx).get_global_rect()
+	var got_bag = inv.bag_view.global_position_to_cell(bag_cell0.get_global_rect().get_center())
+	var got_eq = inv.equip_view.global_position_to_cell(eq_rect.get_center())
+	var snap_off: float = inv.equip_view.cell_position_to_global(
+		Vector2(amulet_idx, 0)).distance_to(eq_rect.end)
+	print("TEST cells bag=", got_bag, " equip=", got_eq, " snap_off=", snappedf(snap_off, 0.1))
+	if got_bag != Vector2.ZERO or got_eq != Vector2(amulet_idx, 0) or snap_off > 2.0:
+		print("TEST FAIL: экранная позиция мыши не совпадает с ячейками")
+		get_tree().quit()
+		return
+	# реальный путь перетаскивания: движение мыши над слотом задаёт цель,
+	# отпускание кнопки кладёт стопку именно туда
+	var held = GrabbedItemStackView.get_instance()
+	held.grab(inv.bag_view.inventory.get_item_at_position(0, 0))
+	var motion := InputEventMouseMotion.new()
+	motion.global_position = eq_rect.get_center()
+	inv.equip_view._on_cell_gui_input(motion, amulet_idx)
+	held.drop()
+	await get_tree().process_frame
+	var worn_amulet = GameState.equipped.get("amulet")
+	var clicked_on := worn_amulet is Dictionary and String(worn_amulet.get("id", "")) == "amulet_ward"
+	print("TEST click-equip amulet=", clicked_on)
+	if not clicked_on:
+		print("TEST FAIL: предмет не надевается перетаскиванием")
+		get_tree().quit()
+		return
+	# --- перетаскивание: тот же путь, что и отпускание мыши в UI, —
+	# try_place_stackv вью. Стопка обязана уйти из сумки, встать в слот и
+	# переехать в GameState. Берём ring2: в ring мог сесть подобранный выше предмет.
+	var ring = ItemCatalog.stack("ring_power", 1)
+	var src = null
+	if ring != null and inv.bag_view.inventory.try_add_item(ring) == 1:
+		for st in inv.bag_view.inventory.items:
+			if st != null and String(st.item_type.resource_name) == "ring_power":
+				src = st
+				break
+	if src == null:
+		print("TEST FAIL: кольцо не легло в сумку экрана")
+		get_tree().quit()
+		return
+	inv.bag_view.inventory.remove_item(src)
+	var left_handed = inv.equip_view.try_place_stackv(
+		src, Vector2(GameState.EQUIP_SLOTS.find("ring2"), 0))
+	await get_tree().process_frame
+	var worn = GameState.equipped.get("ring2")
+	var worn_ok := worn is Dictionary and String(worn.get("id", "")) == "ring_power"
+	var left_in_bag := false
+	for e in GameState.inventory:
+		if String(e.get("id")) == "ring_power":
+			left_in_bag = true
+	print("TEST drag placed=", left_handed == null, " worn=", worn_ok,
+		" left_in_bag=", left_in_bag)
+	if left_handed != null or not worn_ok or left_in_bag:
+		print("TEST FAIL: перетаскивание не доехало до GameState")
+		get_tree().quit()
+		return
+	# мост обязан вернуть ровно то же, что принял: пересборка сумки молча
+	# чистит GameState, если хоть один предмет не распарсился в ItemType
+	var inv_before := GameState.inventory.size()
+	var worn_before := 0
+	for s in GameState.EQUIP_SLOTS:
+		if GameState.equipped.get(s) is Dictionary:
+			worn_before += 1
 	inv.request_close()
 	await get_tree().process_frame
 	print("TEST inventory closed=", not m.hud.is_inventory_open(), " paused=", get_tree().paused)
 	if m.hud.is_inventory_open() or get_tree().paused:
 		print("TEST FAIL: экран инвентаря не закрылся")
+		get_tree().quit()
+		return
+	var worn_after := 0
+	for s in GameState.EQUIP_SLOTS:
+		if GameState.equipped.get(s) is Dictionary:
+			worn_after += 1
+	print("TEST bridge inv=", inv_before, "->", GameState.inventory.size(),
+		" worn=", worn_before, "->", worn_after)
+	if GameState.inventory.size() != inv_before or worn_after != worn_before:
+		print("TEST FAIL: экран инвентаря потерял предметы")
 		get_tree().quit()
 		return
 	# --- выбор в диалоге: курсор обязан быть видимым, а цифры 1–3 работать.

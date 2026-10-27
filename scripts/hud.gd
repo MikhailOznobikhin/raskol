@@ -393,16 +393,27 @@ func toggle_inventory(on: bool) -> void:
 func _open_inventory() -> void:
 	if is_inventory_open():
 		return
-	var s: Control = load("res://scripts/inventory_screen.gd").new()
-	s.scale = Vector2(0.5, 0.5)
+	# Сцена Wyvernbox: тултип и «рука» с предметом — синглтоны на всю игру,
+	# поэтому они живут внутри экрана и создаются вместе с ним.
+	#
+	# Вешать экран на слой HUD нельзя: HUD растянут ×2, а аддон пересчитывает
+	# позицию мыши в ячейку через get_global_transform(), который трансформ
+	# слой не видит. Клики попадали в удвоенные координаты (ячейка сумки не
+	# отзывалась), а предмет в «руке» уезжал от курсора. Поэтому экран живёт
+	# на собственном слое без масштаба и без компенсации 0.5.
+	var s: Control = load("res://ui/player_inventory.tscn").instantiate()
+	var wrap := CanvasLayer.new()
+	wrap.layer = 11
+	wrap.process_mode = Node.PROCESS_MODE_ALWAYS
+	wrap.add_child(s)
+	add_child(wrap)
 	s.closed.connect(func():
 		# Esc/I внутри экрана закрыл его сам — этот же кадр не должен ещё и открыть паузу
 		_inventory_closed_frame = Engine.get_process_frames()
 		inventory_root = null
-		s.queue_free()
+		wrap.queue_free()
 		get_tree().paused = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
-	add_child(s)
 	inventory_root = s
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

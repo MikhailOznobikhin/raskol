@@ -1,0 +1,394 @@
+[gd_scene load_steps=20 format=3]
+
+[ext_resource type="Script" path="res://scripts/player_inventory.gd" id="1_self"]
+[ext_resource type="Theme" path="res://ui/themes/dark_fantasy_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://assets/ui/inventory/panel_brick.png" id="3_brick"]
+[ext_resource type="Script" path="res://addons/wyvernbox/inventory_view.gd" id="4_view"]
+[ext_resource type="Script" path="res://addons/wyvernbox/inventories/grid_inventory.gd" id="5_grid"]
+[ext_resource type="Script" path="res://addons/wyvernbox/inventories/restricted_inventory.gd" id="6_restricted"]
+[ext_resource type="PackedScene" path="res://addons/wyvernbox_prefabs/item_stack_view.tscn" id="7_item"]
+[ext_resource type="StyleBox" path="res://ui/themes/slot_selected.tres" id="8_sel"]
+[ext_resource type="StyleBox" path="res://ui/themes/slot_dark.tres" id="9_slot"]
+[ext_resource type="PackedScene" path="res://addons/wyvernbox_prefabs/tooltip.tscn" id="10_tooltip"]
+[ext_resource type="Script" path="res://scripts/raskol_tooltip.gd" id="11_tooltip_script"]
+[ext_resource type="Script" path="res://scripts/tooltip_property_raskol.gd" id="12_property"]
+[ext_resource type="Script" path="res://scripts/inventory_grid_bg.gd" id="13_bg"]
+[ext_resource type="PackedScene" path="res://addons/wyvernbox_prefabs/grabbed_item_stack_view.tscn" id="14_grabbed"]
+
+[sub_resource type="Resource" id="Inventory_bag"]
+resource_name = "Bag7x4"
+script = ExtResource("5_grid")
+width = 7
+height = 4
+
+[sub_resource type="Resource" id="Inventory_equip"]
+resource_name = "Equip10"
+script = ExtResource("6_restricted")
+allow_rotation = true
+width = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip"]
+content_margin_left = 8.0
+content_margin_top = 0.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(0.03, 0.03, 0.04, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.45, 0.2, 0.9)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+anti_aliasing = false
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nameplate"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.16, 0.13, 0.08, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.92, 0.72, 0.55)
+anti_aliasing = false
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_desc"]
+content_margin_left = 6.0
+content_margin_top = 4.0
+content_margin_right = 6.0
+content_margin_bottom = 4.0
+
+[node name="PlayerInventory" type="Control"]
+offset_right = 1280.0
+offset_bottom = 720.0
+process_mode = 3
+theme = ExtResource("2_theme")
+script = ExtResource("1_self")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="Panel" type="NinePatchRect" parent="."]
+offset_left = 140.0
+offset_top = 110.0
+offset_right = 1140.0
+offset_bottom = 610.0
+mouse_filter = 2
+texture = ExtResource("3_brick")
+patch_margin_left = 40
+patch_margin_top = 40
+patch_margin_right = 40
+patch_margin_bottom = 40
+
+[node name="Title" type="Label" parent="Panel"]
+offset_left = 24.0
+offset_top = 14.0
+offset_right = 524.0
+offset_bottom = 46.0
+theme_override_colors/font_color = Color(0.88, 0.8, 0.62, 1)
+theme_override_font_sizes/font_size = 22
+text = "ИНВЕНТАРЬ"
+
+[node name="HeadEquip" type="Label" parent="Panel"]
+offset_left = 24.0
+offset_top = 60.0
+offset_right = 216.0
+offset_bottom = 80.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 12
+text = "СНАРЯЖЕНИЕ"
+horizontal_alignment = 1
+
+[node name="HeadBag" type="Label" parent="Panel"]
+offset_left = 240.0
+offset_top = 60.0
+offset_right = 632.0
+offset_bottom = 80.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 12
+text = "СУМКА"
+horizontal_alignment = 1
+
+[node name="HeadStats" type="Label" parent="Panel"]
+offset_left = 652.0
+offset_top = 60.0
+offset_right = 976.0
+offset_bottom = 80.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 12
+text = "ГЕРОЙ"
+horizontal_alignment = 1
+
+[node name="Equip" type="Control" parent="Panel"]
+unique_name_in_owner = true
+offset_left = 24.0
+offset_top = 84.0
+offset_right = 216.0
+offset_bottom = 370.0
+script = ExtResource("4_view")
+inventory = SubResource("Inventory_equip")
+item_scene = ExtResource("7_item")
+cell_size = Vector2(56, 56)
+selected_item_style = ExtResource("8_sel")
+show_backgrounds = false
+autosave_intensity = 0
+
+[node name="Cells" type="Control" parent="Panel/Equip"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="weapon" type="Panel" parent="Panel/Equip/Cells"]
+offset_top = 72.0
+offset_right = 56.0
+offset_bottom = 128.0
+
+[node name="offhand" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 128.0
+offset_top = 72.0
+offset_right = 184.0
+offset_bottom = 128.0
+
+[node name="helmet" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 64.0
+offset_right = 120.0
+offset_bottom = 56.0
+
+[node name="armor" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 64.0
+offset_top = 72.0
+offset_right = 120.0
+offset_bottom = 128.0
+
+[node name="belt" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 64.0
+offset_top = 144.0
+offset_right = 120.0
+offset_bottom = 200.0
+
+[node name="hands" type="Panel" parent="Panel/Equip/Cells"]
+offset_top = 144.0
+offset_right = 56.0
+offset_bottom = 200.0
+
+[node name="boots" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 64.0
+offset_top = 216.0
+offset_right = 120.0
+offset_bottom = 272.0
+
+[node name="ring" type="Panel" parent="Panel/Equip/Cells"]
+offset_top = 216.0
+offset_right = 56.0
+offset_bottom = 272.0
+
+[node name="ring2" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 128.0
+offset_top = 216.0
+offset_right = 184.0
+offset_bottom = 272.0
+
+[node name="amulet" type="Panel" parent="Panel/Equip/Cells"]
+offset_left = 128.0
+offset_right = 184.0
+offset_bottom = 56.0
+
+[node name="Titles" type="Control" parent="Panel/Equip"]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="weapon" type="Label" parent="Panel/Equip/Titles"]
+offset_left = -4.0
+offset_top = 128.0
+offset_right = 60.0
+offset_bottom = 142.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="offhand" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 124.0
+offset_top = 128.0
+offset_right = 188.0
+offset_bottom = 142.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="helmet" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 60.0
+offset_top = 56.0
+offset_right = 124.0
+offset_bottom = 70.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="armor" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 60.0
+offset_top = 128.0
+offset_right = 124.0
+offset_bottom = 142.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="belt" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 60.0
+offset_top = 200.0
+offset_right = 124.0
+offset_bottom = 214.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="hands" type="Label" parent="Panel/Equip/Titles"]
+offset_left = -4.0
+offset_top = 200.0
+offset_right = 60.0
+offset_bottom = 214.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="boots" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 60.0
+offset_top = 272.0
+offset_right = 124.0
+offset_bottom = 286.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="ring" type="Label" parent="Panel/Equip/Titles"]
+offset_left = -4.0
+offset_top = 272.0
+offset_right = 60.0
+offset_bottom = 286.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="ring2" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 124.0
+offset_top = 272.0
+offset_right = 188.0
+offset_bottom = 286.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="amulet" type="Label" parent="Panel/Equip/Titles"]
+offset_left = 124.0
+offset_top = 56.0
+offset_right = 188.0
+offset_bottom = 70.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="Bag" type="Control" parent="Panel"]
+unique_name_in_owner = true
+offset_left = 240.0
+offset_top = 84.0
+offset_right = 632.0
+offset_bottom = 308.0
+script = ExtResource("4_view")
+inventory = SubResource("Inventory_bag")
+item_scene = ExtResource("7_item")
+cell_size = Vector2(56, 56)
+selected_item_style = ExtResource("8_sel")
+show_backgrounds = false
+autosave_intensity = 0
+grid_background = NodePath("BG")
+
+[node name="BG" type="Control" parent="Panel/Bag"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("13_bg")
+slot_style = ExtResource("9_slot")
+
+[node name="StatsBox" type="PanelContainer" parent="Panel"]
+offset_left = 652.0
+offset_top = 84.0
+offset_right = 976.0
+offset_bottom = 308.0
+mouse_filter = 2
+
+[node name="Stats" type="VBoxContainer" parent="Panel/StatsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Buttons" type="HBoxContainer" parent="Panel"]
+offset_left = 24.0
+offset_top = 404.0
+offset_right = 624.0
+offset_bottom = 438.0
+theme_override_constants/separation = 10
+
+[node name="BtnAction" type="Button" parent="Panel/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 0)
+text = "НЕТ ПРЕДМЕТА"
+
+[node name="BtnSort" type="Button" parent="Panel/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+text = "РАСЛОЖИТЬ"
+
+[node name="BtnClose" type="Button" parent="Panel/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+text = "ЗАКРЫТЬ"
+
+[node name="Hint" type="Label" parent="Panel"]
+offset_left = 24.0
+offset_top = 456.0
+offset_right = 952.0
+offset_bottom = 476.0
+theme_override_colors/font_color = Color(0.58, 0.56, 0.5, 1)
+theme_override_font_sizes/font_size = 11
+text = "ЛКМ — взять · ПКМ — одну · 2×ЛКМ — собрать такие же · Shift+ЛКМ — переложить · F — подсветить такой же предмет · Esc — закрыть"
+
+[node name="Tooltip" parent="." instance=ExtResource("10_tooltip")]
+visible = false
+z_index = 10
+custom_minimum_size = Vector2(300, 0)
+offset_right = 300.0
+script = ExtResource("11_tooltip_script")
+property_scripts = Array[Script]([ExtResource("12_property")])
+nameplate_panel = SubResource("StyleBoxFlat_nameplate")
+desc_panel = SubResource("StyleBoxEmpty_desc")
+back_panel = SubResource("StyleBoxFlat_tooltip")
+color_bonus = Color(0.85, 0.76, 0.5, 1)
+color_malus = Color(0.72, 0.32, 0.28, 1)
+color_neutral = Color(0.58, 0.56, 0.5, 1)
+color_description = Color(0.86, 0.82, 0.74, 1)
+
+[node name="Held" parent="." instance=ExtResource("14_grabbed")]
+z_index = 12
+unit_size = Vector2(56, 56)

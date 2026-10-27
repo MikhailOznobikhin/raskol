@@ -54,6 +54,7 @@ if ($Assets) {
     & $py (Join-Path $ws 'src\build_3d_textures.py')
     & $py (Join-Path $ws 'src\build_menu_bg.py')
     & $py (Join-Path $ws 'src\build_cinematic.py')
+    & $py (Join-Path $ws 'src\build_inventory_ui.py')
     & $py (Join-Path $ws 'src\audio\build_audio.py')
     # SFX v2 собираются из CC0-сэмплов (tools\cc0) и должны идти ПОСЛЕ
     # процедурного генератора, иначе он перезапишет их старыми версиями.

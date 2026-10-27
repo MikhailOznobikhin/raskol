@@ -38,11 +38,14 @@ var boss_dead := false
 var saw_prologue := false
 
 # инвентарь и экипировка
-## Порядок обхода слотов в интерфейсе: оружие и броня слева, мелочь справа.
-const EQUIP_SLOTS := ["weapon", "helmet", "armor", "boots", "ring", "amulet"]
+## Порядок обхода слотов в интерфейсе: он же — порядок ячеек экипировки Wyvernbox,
+## поэтому список задаёт и раскладку экрана, и какие флаги принимает каждая ячейка.
+const EQUIP_SLOTS := ["weapon", "offhand", "helmet", "armor", "belt", "hands",
+	"boots", "ring", "ring2", "amulet"]
 const SLOT_TITLES := {
-	"weapon": "ОРУЖИЕ", "helmet": "ШЛЕМ", "armor": "БРОНЯ",
-	"boots": "САПОГИ", "ring": "КОЛЬЦО", "amulet": "АМУЛЕТ",
+	"weapon": "ОРУЖИЕ", "offhand": "ЩИТ", "helmet": "ШЛЕМ", "armor": "БРОНЯ",
+	"belt": "ПОЯС", "hands": "РУКАВИЦЫ", "boots": "САПОГИ",
+	"ring": "КОЛЬЦО", "ring2": "КОЛЬЦО II", "amulet": "АМУЛЕТ",
 }
 var inventory: Array = []   # [{id, name, kind, slot, icon, count, ...}]
 var equipped := {}          # slot -> предмет | null
