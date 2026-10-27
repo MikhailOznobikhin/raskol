@@ -5,6 +5,10 @@ class_name Enemy3D
 
 signal died(enemy)
 
+const BAR_WIDTH := 1.12
+const BAR_FILL_WIDTH := 0.96
+const BAR_MIN_SCALE := 0.12
+
 var is_boss := false
 var xp_reward := Balance.XP_GUARD
 var hp := 60.0
@@ -44,6 +48,7 @@ var leg_l: Node3D
 var leg_r: Node3D
 var bar_fill: MeshInstance3D
 var bar_bg: MeshInstance3D
+var bar_anchor_y := 0.0
 var mat_cloth: StandardMaterial3D
 var mat_skin: StandardMaterial3D
 var mat_metal: StandardMaterial3D
@@ -99,6 +104,7 @@ func _ready() -> void:
 	_build_rig()
 	_attach_model()
 	_build_bar()
+	_update_health_bar()
 	_build_hurtbox()
 	_add_blob_shadow(0.5 if not is_boss else 0.9)
 
@@ -239,30 +245,64 @@ func _attach_weapon(model: Node3D) -> void:
 
 
 func _build_bar() -> void:
+	var model_height: float = Balance.BOSS_MODEL_HEIGHT if is_boss else Balance.GUARD_MODEL_HEIGHT
+	bar_anchor_y = model_height + 0.16
+
 	var bg := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(1.0, 0.1)
+	q.size = Vector2(BAR_WIDTH, 0.16)
 	bg.mesh = q
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.05, 0.03, 0.03)
+	m.albedo_color = Color(0.16, 0.11, 0.07)
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg.material_override = m
-	bg.position = Vector3(0, 1.75 if not is_boss else 2.65, 0)
+	bg.position = Vector3(0, bar_anchor_y, 0)
 	add_child(bg)
 	bar_bg = bg
 
+	var bar_track := MeshInstance3D.new()
+	var track_mesh := QuadMesh.new()
+	track_mesh.size = Vector2(1.04, 0.09)
+	bar_track.mesh = track_mesh
+	var track_material := StandardMaterial3D.new()
+	track_material.albedo_color = Color(0.035, 0.022, 0.025)
+	track_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	track_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bar_track.material_override = track_material
+	bar_track.position = Vector3(0, 0, 0.01)
+	bg.add_child(bar_track)
+
 	bar_fill = MeshInstance3D.new()
 	var q2 := QuadMesh.new()
-	q2.size = Vector2(0.96, 0.07)
+	q2.size = Vector2(BAR_FILL_WIDTH, 0.055)
 	bar_fill.mesh = q2
 	var m2 := StandardMaterial3D.new()
-	m2.albedo_color = Color(0.72, 0.16, 0.2)
+	m2.albedo_color = Color(0.82, 0.12, 0.16)
 	m2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m2.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bar_fill.material_override = m2
-	bar_fill.position = Vector3(0, 0, 0.01)
+	bar_fill.position = Vector3(0, 0, 0.02)
 	bg.add_child(bar_fill)
+
+
+func _update_health_bar() -> void:
+	if bar_fill == null:
+		return
+
+	var ratio: float = clampf(hp / maxf(max_hp, 0.001), 0.0, 1.0)
+	bar_fill.scale = Vector3(ratio, 1.0, 1.0)
+	bar_fill.position = Vector3(-(1.0 - ratio) * BAR_FILL_WIDTH * 0.5, 0, 0.02)
+
+	if bar_bg == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		var distance: float = cam.global_position.distance_to(bar_bg.global_position)
+		var scale_factor: float = clampf(distance / 10.0, BAR_MIN_SCALE, 1.0)
+		bar_bg.scale = Vector3.ONE * scale_factor
+	var calm: bool = state == "patrol" or state == "return"
+	bar_bg.visible = not dead and not (calm and ratio > 0.999)
 
 
 func _physics_process(delta: float) -> void:
@@ -271,6 +311,7 @@ func _physics_process(delta: float) -> void:
 	attack_cd = max(0.0, attack_cd - delta)
 	flash = max(0.0, flash - delta)
 	stagger_t = max(0.0, stagger_t - delta)
+	_update_health_bar()
 	if dead:
 		# труп не должен скользить: гасим остаток скорости погони/отдачи,
 		# иначе move_and_slide() продолжает тащить тело по полу.
@@ -344,22 +385,6 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	move_and_slide()
 	_animate(delta)
-	if bar_fill:
-		var ratio: float = clampf(hp / max_hp, 0.0, 1.0)
-		bar_fill.scale = Vector3(ratio, 1.0, 1.0)
-		bar_fill.position.x = -(1.0 - ratio) * 0.48
-		if bar_bg:
-			# полоска живёт в мире: вблизи камеру заслоняла бы метровым щитом.
-			# Держим примерно постоянный размер на экране и прячем у целых спокойных врагов.
-			var cam := get_viewport().get_camera_3d()
-			if cam:
-				var d: float = cam.global_position.distance_to(bar_bg.global_position)
-				var k: float = clampf(d / 11.0, 0.10, 1.0)
-				bar_bg.scale = Vector3(k, k, k)
-				# вблизи полоска опускается к черепу, иначе «висит» в пустоте
-				bar_bg.position.y = lerpf(2.85, 3.05, k) if is_boss else lerpf(2.0, 2.2, k)
-			var calm: bool = state == "patrol" or state == "return"
-			bar_bg.visible = not dead and not (calm and ratio > 0.999)
 
 
 func _apply_gravity(dt: float) -> void:
@@ -588,12 +613,46 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	has_last = true
 	last_seen = from if from != Vector3.ZERO else global_position
 	_start_chase()
+	_update_health_bar()
 	Sfx.play_at("sfx_hit", global_position + Vector3(0, 1.1, 0), -8.0)
+	_spawn_hit_particles()
 	var away := global_position - from
 	away.y = 0
 	velocity += away.normalized() * 3.0
 	if hp <= 0.0:
 		_die()
+
+
+func _spawn_hit_particles() -> void:
+	var particles := CPUParticles3D.new()
+	particles.amount = 8 if not is_boss else 14
+	particles.lifetime = 0.28
+	particles.one_shot = true
+	particles.explosiveness = 1.0
+	particles.direction = Vector3.UP
+	particles.spread = 180.0
+	particles.gravity = Vector3(0, -3.2, 0)
+	particles.initial_velocity_min = 1.2
+	particles.initial_velocity_max = 2.8
+	particles.scale_amount_min = 0.45
+	particles.scale_amount_max = 1.0
+	particles.local_coords = false
+
+	var spark := SphereMesh.new()
+	spark.radius = 0.025
+	spark.height = 0.05
+	var spark_material := StandardMaterial3D.new()
+	spark_material.albedo_color = Color(0.62, 0.035, 0.055)
+	spark_material.emission_enabled = true
+	spark_material.emission = Color(0.75, 0.025, 0.035)
+	spark_material.emission_energy_multiplier = 1.5
+	spark.material = spark_material
+	particles.mesh = spark
+
+	add_child(particles)
+	particles.global_position = global_position + Vector3(0, bar_anchor_y * 0.62, 0)
+	particles.finished.connect(particles.queue_free)
+	particles.emitting = true
 
 
 func knockback(dir: Vector3, force: float) -> void:
@@ -815,4 +874,3 @@ func _build_hurtbox() -> void:
 	cs.position = Vector3(0, 0.75 if not is_boss else 1.2, 0)
 	hurt.add_child(cs)
 	add_child(hurt)
-
