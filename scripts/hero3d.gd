@@ -770,7 +770,7 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	if invuln > 0.0 or dead:
 		return
 	invuln = 0.6
-	GameState.damage(amount)
+	GameState.damage(GameState.mitigate_damage(amount))
 	_bark_damage()
 	Sfx.play_at("sfx_hit", _sfx_pos(), -5.0)
 	_set_state("hurt")

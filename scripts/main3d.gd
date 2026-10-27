@@ -574,6 +574,46 @@ func _test_mode() -> void:
 		print("TEST FAIL: экран развития не закрылся")
 		get_tree().quit()
 		return
+	# --- инвентарь: подбор обязан доезжать до GameState, а экран — собираться
+	# и закрываться без висящей паузы (молча пустой инвентарь жил в игре полгода)
+	var pk := {}
+	for p in m.pickups:
+		if p["kind"] == "item" and not p["used"]:
+			pk = p
+			break
+	if pk.is_empty():
+		print("TEST FAIL: в миссии не осталось неподобранных предметов")
+		get_tree().quit()
+		return
+	var inv0: int = GameState.inventory.size()
+	m._read_pickup(pk, m._lore_entry("item", int(pk["index"])))
+	await get_tree().create_timer(0.6).timeout
+	print("TEST pickup inv=", GameState.inventory.size(), " added=",
+		GameState.inventory.size() - inv0)
+	if GameState.inventory.size() != inv0 + 1:
+		print("TEST FAIL: подобранный предмет не лёг в инвентарь")
+		get_tree().quit()
+		return
+	var new_id := String(GameState.inventory[GameState.inventory.size() - 1].get("id"))
+	if not GameState.equip_item(new_id):
+		print("TEST FAIL: предмет из инвентаря не надевается: ", new_id)
+		get_tree().quit()
+		return
+	m.hud._open_inventory()
+	await get_tree().process_frame
+	var inv: Control = m.hud.inventory_root
+	print("TEST inventory open=", inv != null, " paused=", get_tree().paused)
+	if inv == null:
+		print("TEST FAIL: экран инвентаря не открылся")
+		get_tree().quit()
+		return
+	inv.request_close()
+	await get_tree().process_frame
+	print("TEST inventory closed=", not m.hud.is_inventory_open(), " paused=", get_tree().paused)
+	if m.hud.is_inventory_open() or get_tree().paused:
+		print("TEST FAIL: экран инвентаря не закрылся")
+		get_tree().quit()
+		return
 	m._finish()
 	await get_tree().create_timer(1.6).timeout
 	print("TEST DONE escaped=", GameState.escaped)

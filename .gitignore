@@ -39,3 +39,7 @@ Desktop.ini
 # Служебные логи AI-генерации
 assets/ai/generation.log
 assets/ai/run.out
+
+# Сырьё из внешних паков (Mixamo и т.п.) до момента отбора: десятки FBX,
+# в репозиторий попадают только готовые .glb в assets/
+assets/incoming/

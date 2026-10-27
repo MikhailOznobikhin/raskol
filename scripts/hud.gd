@@ -42,6 +42,8 @@ var pause_root: Control
 var settings_root: Control
 var inventory_root: Control
 var _settings_closed_frame := -1
+var _inventory_closed_frame := -1
+var _i_down := false
 var death_root: Control
 var typing := false
 var waiting_advance := false
@@ -54,17 +56,13 @@ const BAR_W := 132
 func _ready() -> void:
 	layer = 10
 	_build()
-	_build_inventory()
 	GameState.stats_changed.connect(_refresh_stats)
-	if GameState.has_signal("inventory_changed"):
-		GameState.inventory_changed.connect(_refresh_inventory)
 	GameState.xp_changed.connect(_refresh_progression)
 	GameState.skills_changed.connect(_refresh_progression)
 	GameState.xp_gained.connect(_on_xp_gained)
 	GameState.level_up.connect(_on_level_up)
 	_refresh_stats()
 	_refresh_progression()
-	_refresh_inventory()
 
 
 func _panel(pos: Vector2, size: Vector2) -> NinePatchRect:
@@ -379,125 +377,35 @@ func _pause_button(text: String, y: float, action: Callable) -> void:
 	pause_root.add_child(b)
 
 
-func _build_inventory() -> void:
-	inventory_root = Control.new()
-	inventory_root.visible = false
-	inventory_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	inventory_root.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(inventory_root)
-	var dim := ColorRect.new()
-	dim.color = Color(0.01, 0.01, 0.03, 0.75)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	inventory_root.add_child(dim)
-	# _panel/_label уже добавляют узел в HUD, поэтому переносим их в корень инвентаря
-	var panel := _panel(Vector2(160, 50), Vector2(340, 260))
-	panel.reparent(inventory_root, false)
-	var title := _label("ИНВЕНТАРЬ", Vector2(170, 58), Vector2(140, 16), 12, Color(0.9, 0.82, 0.62))
-	title.reparent(inventory_root, false)
-	var eq_header := _label("ЭКИПИРОВКА", Vector2(170, 82), Vector2(90, 12), 9, Color(0.76, 0.66, 0.48))
-	eq_header.reparent(inventory_root, false)
-	var inv_header := _label("ИНВЕНТАРЬ", Vector2(330, 82), Vector2(80, 12), 9, Color(0.76, 0.66, 0.48))
-	inv_header.reparent(inventory_root, false)
-	var stats_header := _label("ХАРАКТЕРИСТИКИ", Vector2(170, 222), Vector2(140, 12), 9, Color(0.76, 0.66, 0.48))
-	stats_header.reparent(inventory_root, false)
-	# слоты экипировки
-	_slot(Vector2(178, 104), "helmet", "ШЛЕМ")
-	_slot(Vector2(234, 104), "armor", "БРОНЯ")
-	_slot(Vector2(178, 158), "boots", "БОТИНКИ")
-	_slot(Vector2(234, 158), "weapon", "ОРУЖИЕ")
-	# превью персонажа
-	var prev := NinePatchRect.new()
-	prev.texture = Art.tex("res://assets/ui/panel.png")
-	prev.patch_margin_left = 6; prev.patch_margin_right = 6; prev.patch_margin_top = 6; prev.patch_margin_bottom = 6
-	prev.position = Vector2(290, 104)
-	prev.size = Vector2(56, 110)
-	inventory_root.add_child(prev)
-	var prev_label := _label("ТОРВИН", Vector2(290, 218), Vector2(56, 12), 7, Color(0.84, 0.78, 0.66))
-	prev_label.reparent(inventory_root, false)
-	prev_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	# характеристики
-	var stats := _label("", Vector2(170, 238), Vector2(320, 60), 8, Color(0.9, 0.88, 0.82))
-	stats.name = "inv_stats"
-	stats.reparent(inventory_root, false)
-	# сетка предметов
-	var grid := Control.new()
-	grid.name = "inv_grid"
-	grid.position = Vector2(330, 104)
-	grid.size = Vector2(152, 110)
-	inventory_root.add_child(grid)
-	for y in 3:
-		for x in 4:
-			var cell := NinePatchRect.new()
-			cell.texture = Art.tex("res://assets/ui/panel.png")
-			cell.patch_margin_left = 4; cell.patch_margin_right = 4; cell.patch_margin_top = 4; cell.patch_margin_bottom = 4
-			cell.position = Vector2(x * 38, y * 36)
-			cell.size = Vector2(34, 32)
-			grid.add_child(cell)
-	var grid_label := _label("Пусто", Vector2(330, 218), Vector2(152, 12), 7, Color(0.7, 0.68, 0.6))
-	grid_label.name = "inv_hint"
-	grid_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	grid_label.reparent(inventory_root, false)
-	var close := Button.new()
-	close.text = "ЗАКРЫТЬ (I/ESC)"
-	close.position = Vector2(350, 276)
-	close.size = Vector2(130, 24)
-	close.add_theme_font_size_override("font_size", 9)
-	close.pressed.connect(func(): toggle_inventory(false))
-	inventory_root.add_child(close)
-
-
-func _slot(pos: Vector2, slot: String, label: String) -> void:
-	var p := NinePatchRect.new()
-	p.texture = Art.tex("res://assets/ui/panel.png")
-	p.patch_margin_left = 5; p.patch_margin_right = 5; p.patch_margin_top = 5; p.patch_margin_bottom = 5
-	p.position = pos
-	p.size = Vector2(48, 48)
-	p.name = "slot_%s" % slot
-	p.mouse_filter = Control.MOUSE_FILTER_STOP
-	inventory_root.add_child(p)
-	var l := Label.new()
-	l.text = label
-	l.position = pos + Vector2(0, 50)
-	l.size = Vector2(48, 10)
-	l.add_theme_font_size_override("font_size", 7)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_color_override("font_color", Color(0.76, 0.72, 0.62))
-	inventory_root.add_child(l)
-
-
-func _refresh_inventory() -> void:
-	if inventory_root == null or not inventory_root.visible:
-		return
-	var stats := inventory_root.get_node_or_null("inv_stats") as Label
-	if stats != null:
-		var hp_b := GameState.get_health_bonus() if GameState.has_method("get_health_bonus") else 0.0
-		var arm_b := GameState.get_armor_bonus() if GameState.has_method("get_armor_bonus") else 0.0
-		var dmg_b := GameState.get_damage_bonus() if GameState.has_method("get_damage_bonus") else 0.0
-		stats.text = "ЗДОРОВЬЕ: %d (+%d)   БРОНЯ: %d (+%d)   УРОН: %d (+%d)" % [int(GameState.health), int(hp_b), int(arm_b), int(arm_b), int(12 + dmg_b), int(dmg_b)]
-	var hint := inventory_root.get_node_or_null("inv_hint") as Label
-	if hint != null:
-		var list: Array = GameState.inventory if "inventory" in GameState else []
-		if list.is_empty():
-			hint.text = "ПУСТО"
-		else:
-			hint.text = "ПРЕДМЕТОВ: %d" % list.size()
+## Инвентарь — отдельный экран в координатах 1280×720, как настройки и развитие:
+## в половинной сетке HUD его панель не помещалась, подписи лезли одна на другую.
+func is_inventory_open() -> bool:
+	return inventory_root != null and is_instance_valid(inventory_root)
 
 
 func toggle_inventory(on: bool) -> void:
-	if inventory_root == null:
-		return
-	inventory_root.visible = on
 	if on:
-		_refresh_inventory()
-		get_tree().paused = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	else:
+		_open_inventory()
+	elif is_inventory_open():
+		inventory_root.request_close()
+
+
+func _open_inventory() -> void:
+	if is_inventory_open():
+		return
+	var s: Control = load("res://scripts/inventory_screen.gd").new()
+	s.scale = Vector2(0.5, 0.5)
+	s.closed.connect(func():
+		# Esc/I внутри экрана закрыл его сам — этот же кадр не должен ещё и открыть паузу
+		_inventory_closed_frame = Engine.get_process_frames()
+		inventory_root = null
+		s.queue_free()
 		get_tree().paused = false
-		if pause_root != null and pause_root.visible:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+	add_child(s)
+	inventory_root = s
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 ## Экран настроек поверх паузы: HUD растянут ×2, поэтому компенсируем масштаб.
@@ -677,10 +585,13 @@ func _process(delta: float) -> void:
 		if text_label.visible_characters >= total:
 			text_label.visible_characters = total
 			typing = false
-	if inventory_root != null and inventory_root.visible:
-		if Input.is_action_just_pressed("ui_cancel") or Input.is_key_pressed(KEY_I):
-			toggle_inventory(false)
-			return
+	# Инерция по клавише: раньше открытие и закрытие висело на is_key_pressed,
+	# поэтому удержанная «I» переключала экран каждый кадр — окно мигало.
+	var i_down := Input.is_physical_key_pressed(KEY_I)
+	var i_edge := i_down and not _i_down
+	_i_down = i_down
+	if is_inventory_open():
+		return
 	if settings_root == null and development_root == null \
 			and _settings_closed_frame != Engine.get_process_frames() \
 			and _dev_closed_frame != Engine.get_process_frames() \
@@ -688,17 +599,14 @@ func _process(delta: float) -> void:
 		if pause_root != null and pause_root.visible:
 			toggle_pause(false)
 			return
-		if inventory_root != null and inventory_root.visible:
-			toggle_inventory(false)
-			return
 		if not death_root.visible and not dialogue_root.visible:
 			toggle_pause(true)
 			return
-	if (Input.is_key_pressed(KEY_I)) and not dialogue_root.visible and not death_root.visible and (pause_root == null or not pause_root.visible):
-		if inventory_root != null and not inventory_root.visible and not get_tree().paused:
-			toggle_inventory(true)
-		elif inventory_root != null and inventory_root.visible:
-			toggle_inventory(false)
+	if i_edge and settings_root == null and development_root == null \
+			and _inventory_closed_frame != Engine.get_process_frames() \
+			and not get_tree().paused and not dialogue_root.visible and not death_root.visible \
+			and (pause_root == null or not pause_root.visible):
+		_open_inventory()
 
 	# --- экран развития по K ---
 	if InputMap.has_action("skills") and development_root == null \

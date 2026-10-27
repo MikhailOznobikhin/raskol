@@ -22,6 +22,7 @@ var fleshes := []
 var pickups := []
 var collected_notes := 0
 var collected_items := 0
+var lore := {}
 var selena_node: Node3D
 
 
@@ -416,17 +417,16 @@ func _load_lore() -> void:
 	if txt.is_empty():
 		return
 	var data = JSON.parse_string(txt)
-	if data is Dictionary and data.has("barks"):
+	if not (data is Dictionary):
+		return
+	lore = data
+	if data.has("barks"):
 		Enemy3D.barks = data["barks"]
 
 
 func _spawn_lore_pickups() -> void:
-	var txt := FileAccess.get_file_as_string("res://assets/text/lore.json")
-	var data = JSON.parse_string(txt)
-	if not (data is Dictionary):
-		return
-	var notes: Array = data.get("notes", [])
-	var items: Array = data.get("items", [])
+	var notes: Array = lore.get("notes", [])
+	var items: Array = lore.get("items", [])
 	var note_pos := [Vector3(14, 0, 58), Vector3(31, 0, 49), Vector3(45, 0, 58),
 		Vector3(80, 0, 57), Vector3(92, 0, 34)]
 	var item_pos := [Vector3(17, 0, 57), Vector3(28, 0, 47), Vector3(46, 0, 60),
@@ -501,11 +501,7 @@ func _make_pickup(kind: String, index: int, pos: Vector3, color: Color) -> void:
 
 
 func _lore_entry(kind: String, index: int) -> Dictionary:
-	var txt := FileAccess.get_file_as_string("res://assets/text/lore.json")
-	var data = JSON.parse_string(txt)
-	if not (data is Dictionary):
-		return {}
-	var arr: Array = data.get("notes" if kind == "note" else "items", [])
+	var arr: Array = lore.get("notes" if kind == "note" else "items", [])
 	if index >= arr.size():
 		return {}
 	return arr[index]
@@ -527,12 +523,23 @@ func _read_pickup(pk: Dictionary, entry: Dictionary) -> void:
 		hud.set_counters(collected_notes, collected_items)
 	else:
 		collected_items += 1
+		# предмет без записи в GameState оставался только строчкой в диалоге:
+		# счётчик рос, а в инвентаре было пусто
+		GameState.add_item(entry)
+		Sfx.play("sfx_absorb", -12.0)
 		busy = true
 		hero.control_enabled = false
-		await hud.say([{"name": entry.get("name", "Предмет"), "text": entry.get("desc", "")}])
+		var text := String(entry.get("desc", ""))
+		var bonuses := GameState.item_bonuses_text(entry)
+		if bonuses != "":
+			text += "\n" + bonuses
+		await hud.say([{"name": entry.get("name", "Предмет"), "text": text}])
 		busy = false
 		hero.control_enabled = true
 		hud.set_counters(collected_notes, collected_items)
+		# про клавишу игроку никто не говорил: сумка казалась пустой, хотя
+		# предметы в ней лежали
+		hud.set_hint("Предмет в сумке · открыть инвентарь: I")
 
 
 func _checkpoint() -> void:
@@ -549,6 +556,8 @@ func _checkpoint() -> void:
 		"boss_dead": boss_dead,
 		"notes": collected_notes,
 		"items": collected_items,
+		"inventory": GameState.inventory,
+		"equipped": GameState.equipped,
 		"objective": objective,
 		"progression": GameState.progression_data(),
 	}
@@ -574,6 +583,15 @@ func _restore_save() -> void:
 	boss_dead = bool(d.get("boss_dead", false))
 	collected_notes = int(d.get("notes", 0))
 	collected_items = int(d.get("items", 0))
+	# сумка без этого возвращалась пустой: счётчик «предметы 3/6» переживал
+	# загрузку, а сами предметы — нет
+	var inv = d.get("inventory", [])
+	if inv is Array:
+		GameState.inventory = inv
+	var eq = d.get("equipped", {})
+	if eq is Dictionary and not eq.is_empty():
+		GameState.equipped = eq
+	GameState.inventory_changed.emit()
 	hud.set_counters(collected_notes, collected_items)
 	GameState.boss_dead = boss_dead
 	GameState.stats_changed.emit()

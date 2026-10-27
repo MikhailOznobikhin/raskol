@@ -619,4 +619,11 @@ def build():
 
 
 if __name__ == "__main__":
-    build()
+    # --icons: пересобрать только иконки (полный build() перезаписывает весь
+    # UI, арт и fx — лишние дельты в git, когда нужна одна новая пиктограмма)
+    if "--icons" in sys.argv:
+        os.makedirs(UI, exist_ok=True)
+        build_icons()
+        print("icons built")
+    else:
+        build()
