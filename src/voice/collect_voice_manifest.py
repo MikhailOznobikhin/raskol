@@ -48,6 +48,37 @@ ALIASES = {
 PAREN_RE = re.compile(r"hud\.say\(")
 
 
+def load_existing_ids() -> dict[tuple[str, str, str], str]:
+    """Ключ (kind, speaker, text) → id из прошлого манифеста.
+
+    Реплика с тем же текстом сохраняет id, поэтому кэш озвучки не
+    инвалидируется, когда меняются соседние строки.
+    """
+    if not OUT.exists():
+        return {}
+    try:
+        data = json.loads(OUT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[tuple[str, str, str], str] = {}
+    for ln in data.get("lines", []) if isinstance(data, dict) else []:
+        if not isinstance(ln, dict):
+            continue
+        text = str(ln.get("text", ""))
+        id_ = str(ln.get("id", ""))
+        if text and id_:
+            key = (str(ln.get("kind", "")), str(ln.get("speaker", "")), text)
+            out.setdefault(key, id_)
+    return out
+
+
+def assign_id(prefix: str, used: set[str]) -> str:
+    n = 1
+    while f"{prefix}_{n:03d}" in used:
+        n += 1
+    return f"{prefix}_{n:03d}"
+
+
 def balanced_block(text: str, start: int) -> str:
     """Возвращает содержимое скобок вызова, начиная со '[' или '{'."""
     i = start + len("hud.say(")
@@ -82,9 +113,14 @@ def extract_name_text(block: str) -> list[tuple[str, str]]:
         tx = re.search(r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"', d)
         if tx:
             name = nm.group(1) if nm else "Торвин"
-            text = tx.group(1).encode().decode("unicode_escape", errors="ignore")
-            text = text.replace('\\"', '"').strip()
-            out.append((name, text))
+            # Тело строки — это JSON-строка: json.loads корректно снимает
+            # \" и \n и сохраняет кириллицу (unicode_escape её ломал).
+            raw = tx.group(1)
+            try:
+                text = json.loads(f'"{raw}"')
+            except json.JSONDecodeError:
+                text = raw.replace('\\"', '"')
+            out.append((name, text.strip()))
     return out
 
 
@@ -140,20 +176,31 @@ def main() -> None:
         lines.append({"speaker": "Рассказчик", "text": text,
                       "source": "lore.json#notes", "kind": "note"})
     for entry in groups.get("item", []):
-        name_ = text_of(entry, "name")
         text = text_of(entry, "desc")
         if not text:
             continue
-        lines.append({"speaker": "Рассказчик",
-                      "text": f"{name_}. {text}" if name_ else text,
+        # Текст ДОЛЖЕН совпадать с тем, что миссия передаёт в hud.say
+        # (описание без префикса), иначе матчинг озвучки не сработает.
+        lines.append({"speaker": "Рассказчик", "text": text,
                       "source": "lore.json#items", "kind": "item"})
 
     counters: dict[str, int] = {}
+    existing = load_existing_ids()
+    # Сначала резервируем id, которые переиспользуются: иначе новая строка
+    # может занять номер, который через пару строк достанется старой.
+    used: set[str] = {id_ for ln in lines
+                      if (id_ := existing.get((ln["kind"], ln["speaker"], ln["text"]), ""))}
+    assigned: set[str] = set()
     for ln in lines:
         prefix = {"dlg": "m1_dlg", "bark": "m1_bark",
                   "note": "m1_note", "item": "m1_item"}[ln["kind"]]
+        id_ = existing.get((ln["kind"], ln["speaker"], ln["text"]), "")
+        if not id_ or id_ in assigned:
+            id_ = assign_id(prefix, used)
         counters[prefix] = counters.get(prefix, 0) + 1
-        ln["id"] = f"{prefix}_{counters[prefix]:03d}"
+        ln["id"] = id_
+        assigned.add(id_)
+        used.add(id_)
         ln["priority"] = 1 if ln["kind"] == "dlg" else 3
 
     manifest = {

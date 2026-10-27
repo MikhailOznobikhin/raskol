@@ -9,7 +9,21 @@ build/
 
 # Вендоренные инструменты (Godot-движок, ffmpeg, ffmpeg, appdata-песочница).
 # Путей восстановления: ROADMAP.md §1.1–1.5 — откуда их скачать/где лежат.
-tools/
+tools/*
+!tools/*/
+tools/*/*
+# .gdignore-маркеры коммитим: без них Godot сканирует venv/сэмблы и
+# --export-release падает на тестовых wav из scipy.
+!tools/*/.gdignore
+# Служебный каталог с хвостовым пробелом в имени (APPDATA был задан с пробелом).
+# Git не может открыть его .gdignore, и `git add` падает на всём дереве.
+tools/appdata\ /
+
+# Временные каталоги pip (если установку запускать из корня проекта)
+pip-*/
+
+# Лог headless-импорта Godot из build.ps1 -Import
+import.log
 
 # Python-генераторы
 __pycache__/
@@ -22,6 +36,6 @@ Desktop.ini
 .idea/
 .vscode/
 
-# ������� ���� AI-��������� �������
+# Служебные логи AI-генерации
 assets/ai/generation.log
 assets/ai/run.out

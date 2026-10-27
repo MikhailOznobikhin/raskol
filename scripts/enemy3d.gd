@@ -6,6 +6,7 @@ class_name Enemy3D
 signal died(enemy)
 
 var is_boss := false
+var xp_reward := Balance.XP_GUARD
 var hp := 60.0
 var max_hp := 60.0
 var dead := false
@@ -55,6 +56,8 @@ var bark_cd := 4.0
 var use_model := false
 var model_root: Node3D
 var anim: AnimationPlayer
+var anim_tree: AnimationTree
+var anim_state: AnimationNodeStateMachinePlayback
 var flash_mat: StandardMaterial3D
 var anim_was_dead := false
 
@@ -64,6 +67,7 @@ static var barks: Array = []
 func setup(kind: String) -> void:
 	if kind == "boss":
 		is_boss = true
+		xp_reward = Balance.XP_BOSS
 		hp = Balance.BOSS_HP
 		speed = 2.2
 		chase_speed = 2.9
@@ -204,11 +208,14 @@ func _attach_model() -> void:
 	use_model = true
 	model_root = model
 	anim = ModelUtil.find_anim_player(model)
+	if anim != null:
+		_build_anim_tree()
 	flash_mat = ModelUtil.make_flash_material()
 	ModelUtil.apply_overlay(model, flash_mat)
 	if is_boss:
 		model.position.y += 0.45
-	ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+	if anim != null and anim_tree == null:
+		ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
 
 
 func _build_bar() -> void:
@@ -578,6 +585,7 @@ func _die() -> void:
 	dead = true
 	add_to_group("dead")
 	GameState.guards_killed += 1
+	GameState.add_xp(xp_reward)
 	Sfx.play("sfx_death", -6.0)
 	if bar_fill:
 		bar_fill.get_parent().visible = false
@@ -625,20 +633,89 @@ func _animate(dt: float) -> void:
 		mat_cloth.albedo_color = Color(0.42, 0.09, 0.12)
 
 
+func _build_anim_tree() -> void:
+	if anim == null or anim_tree != null:
+		return
+	anim_tree = AnimationTree.new()
+	anim_tree.name = "AnimTree"
+	var p := anim.get_parent()
+	if p:
+		p.add_child(anim_tree)
+	else:
+		add_child(anim_tree)
+	anim_tree.tree_root = AnimationNodeStateMachine.new()
+	var sm: AnimationNodeStateMachine = anim_tree.tree_root
+	if is_boss:
+		var fid := ModelUtil.pick_anim(anim, ["Flying_Idle"])
+		var ff := ModelUtil.pick_anim(anim, ["Fast_Flying"])
+		var att := ModelUtil.pick_anim(anim, ["Headbutt", "Punch"])
+		var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
+		if fid != "":
+			sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = fid
+		if ff != "":
+			sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = ff
+		if att != "":
+			sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = att
+		if die != "":
+			sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
+	else:
+		var idle := ModelUtil.pick_anim(anim, ["Idle"])
+		var walk := ModelUtil.pick_anim(anim, ["Walk", "Running"])
+		var attack := ModelUtil.pick_anim(anim, ["Attack", "Headbutt", "Punch"])
+		var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
+		if idle != "":
+			sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = idle
+		if walk != "":
+			sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = walk
+		if attack != "":
+			sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = attack
+		if die != "":
+			sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
+	sm.add_transition("Idle", "Move", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Move", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Attack", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Move", "Attack", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Attack", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Attack", "Move", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Death", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Move", "Death", AnimationNodeStateMachineTransition.new())
+	anim_tree.active = true
+	anim_tree.anim_player = anim.get_path()
+	anim_state = anim_tree.get("parameters/playback")
+
+
 ## Анимации модели: Idle/Walk/Attack/HitReact/Death (страж) и полёт (босс).
 func _animate_model(dt: float) -> void:
 	if anim == null:
 		return
 	var sp := Vector2(velocity.x, velocity.z).length()
 	if dead:
-		ModelUtil.play_key(anim, ["Die", "Death"], false)
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Death")
+		else:
+			ModelUtil.play_key(anim, ["Die", "Death"], false)
 		return
 	if state == "attack":
-		ModelUtil.play_key(anim, ["Headbutt", "Punch"] if is_boss else ["Attack"], false, 1.0)
-	elif sp > 0.25:
-		ModelUtil.play_key(anim, ["Fast_Flying"] if is_boss else ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Attack")
+		else:
+			ModelUtil.play_key(anim, ["Headbutt", "Punch"] if is_boss else ["Attack"], false, 1.0)
+		if anim_tree != null:
+			anim_tree.set("parameters/Attack/speed_scale", 1.0)
+		return
+	if anim_state != null and anim_state.has_method("travel"):
+		if sp > 0.25:
+			anim_state.travel("Move")
+			if anim_tree != null:
+				var sc := clampf(sp / 2.6, 0.8, 1.8)
+				anim_tree.set("parameters/Move/speed_scale", sc)
+		else:
+			anim_state.travel("Idle")
 	else:
-		ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+		if sp > 0.25:
+			ModelUtil.play_key(anim, ["Fast_Flying"] if is_boss else ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
+		else:
+			ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
 	if flash_mat != null:
 		flash_mat.albedo_color.a = clampf(flash / 0.18, 0.0, 1.0) * 0.5
 	if model_root != null and is_boss:

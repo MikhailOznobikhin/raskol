@@ -34,3 +34,51 @@
 2026-10-26 21:11:58  [10/77] gen characters/10_low-poly-3d-character-dungeon 1024x1024
 2026-10-26 21:12:48     [10_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (1/30)
 2026-10-26 21:13:00     [10_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (2/30)
+2026-10-26 21:14:26     [10_low-poly-3d-character-dungeon] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 13с (5/30)
+2026-10-26 21:14:39     [10_low-poly-3d-character-dungeon] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (6/30)
+2026-10-26 21:15:15  [11/77] gen environment/01_low-poly-3d-prop-wooden 1024x1024
+2026-10-26 21:16:10  [12/77] gen environment/02_low-poly-3d-prop-wooden 1024x1024
+2026-10-26 21:17:08  [13/77] gen environment/03_low-poly-3d-prop-metal 1024x1024
+2026-10-26 21:18:00     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (1/30)
+2026-10-26 21:18:12     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (2/30)
+2026-10-26 21:18:48     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (3/30)
+2026-10-26 21:19:01     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (4/30)
+2026-10-26 21:19:35     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 10с (5/30)
+2026-10-26 21:19:46     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (6/30)
+2026-10-26 21:20:20     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (7/30)
+2026-10-26 21:20:32     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (8/30)
+2026-10-26 21:21:09     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (9/30)
+2026-10-26 21:21:21     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 34с (10/30)
+2026-10-26 21:21:59     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (11/30)
+2026-10-26 21:22:12     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (12/30)
+2026-10-26 21:22:46     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (13/30)
+2026-10-26 21:22:59     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 31с (14/30)
+2026-10-26 21:23:40     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 13с (15/30)
+2026-10-26 21:23:53     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 23с (16/30)
+2026-10-26 21:24:20     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 13с (17/30)
+2026-10-26 21:24:33     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (18/30)
+2026-10-26 21:25:07     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (19/30)
+2026-10-26 21:25:19     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (20/30)
+2026-10-26 21:25:55     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (21/30)
+2026-10-26 21:26:08     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 33с (22/30)
+2026-10-26 21:26:46     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 11с (23/30)
+2026-10-26 21:26:57     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (24/30)
+2026-10-26 21:27:34     [03_low-poly-3d-prop-metal] HTTP 503 '{"status":503,"success":false,"error":{"code":"SERVICE_UNAVAILABLE","message":"T' -> ждём 12с (25/30)
+2026-10-26 21:27:46     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 30с (26/30)
+2026-10-26 21:28:23  старт: задач 77, палитра 95 цветов, интервал 50с
+2026-10-26 21:28:23  [1/77] skip characters/01_low-poly-3d-character-male
+2026-10-26 21:28:23  [2/77] skip characters/02_low-poly-3d-character-male
+2026-10-26 21:28:23  [3/77] skip characters/03_low-poly-3d-character-male
+2026-10-26 21:28:23  [4/77] skip characters/04_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [5/77] skip characters/05_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [6/77] skip characters/06_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [7/77] skip characters/07_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [8/77] skip characters/08_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [9/77] skip characters/09_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [10/77] skip characters/10_low-poly-3d-character-dungeon
+2026-10-26 21:28:23  [11/77] skip environment/01_low-poly-3d-prop-wooden
+2026-10-26 21:28:23  [12/77] skip environment/02_low-poly-3d-prop-wooden
+2026-10-26 21:28:23  [13/77] gen environment/03_low-poly-3d-prop-metal 1024x1024
+2026-10-26 21:28:23     [03_low-poly-3d-prop-metal] HTTP 402 '{"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit' -> ждём 65с (1/40)
+2026-10-26 21:29:30  [14/77] gen environment/04_low-poly-3d-prop-wooden 1024x1024
+2026-10-26 21:30:30  [15/77] gen environment/05_low-poly-3d-prop-ore 1024x1024

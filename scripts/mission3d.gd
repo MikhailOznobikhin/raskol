@@ -550,6 +550,7 @@ func _checkpoint() -> void:
 		"notes": collected_notes,
 		"items": collected_items,
 		"objective": objective,
+		"progression": GameState.progression_data(),
 	}
 	SaveSystem.write(data)
 
@@ -559,9 +560,12 @@ func _restore_save() -> void:
 	if d.is_empty():
 		_intro()
 		return
+	var prog = d.get("progression", {})
+	if prog is Dictionary:
+		GameState.apply_progression(prog)
 	hero.global_position = Vector3(float(d.get("x", 13.0)), 0.2, float(d.get("z", 56.5)))
-	GameState.health = float(d.get("hp", 100.0))
-	GameState.magic = float(d.get("magic", 0.0))
+	GameState.health = minf(float(d.get("hp", GameState.get_max_health())), GameState.get_max_health())
+	GameState.magic = minf(float(d.get("magic", 0.0)), GameState.get_max_magic())
 	GameState.craving = float(d.get("craving", 0.0))
 	GameState.trust = int(d.get("trust", -40))
 	door_open = bool(d.get("door_open", false))

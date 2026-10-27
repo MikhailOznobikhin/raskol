@@ -23,6 +23,7 @@ var control_enabled := true
 var crouching := false
 var distract_cd := 0.0
 var spike_cd := 0.0
+var nova_cd := 0.0
 var dodge_dir := Vector3.ZERO
 var turn_rate := 0.0
 
@@ -58,6 +59,8 @@ var use_model := false
 var model_root: Node3D
 var weapon_model: Node3D
 var anim: AnimationPlayer
+var anim_tree: AnimationTree
+var anim_state: AnimationNodeStateMachinePlayback
 
 signal died
 
@@ -252,10 +255,12 @@ func _attach_model() -> void:
 	use_model = true
 	model_root = model
 	anim = ModelUtil.find_anim_player(model)
+	if anim != null:
+		_build_anim_tree()
 	_attach_weapon(model)
 	# CC0-модели гнома с этим ригом нет, поэтому шляпу лепим поверх Head
 	GnomeKit.decorate(model)
-	if anim != null:
+	if anim != null and anim_tree == null:
 		ModelUtil.play_key(anim, ["Idle"], true)
 
 
@@ -440,7 +445,7 @@ func _launch_spike(dir: Vector3) -> void:
 		if not hit.is_empty():
 			var body = hit.get("collider")
 			if body != null and body.has_method("take_damage"):
-				body.take_damage(Balance.SPIKE_DMG, global_position)
+				body.take_damage(Balance.SPIKE_DMG * GameState.spell_damage_mult(), global_position)
 			_spike_hit_fx(next)
 			mi.queue_free()
 			return
@@ -473,11 +478,67 @@ func _spike_hit_fx(pos: Vector3) -> void:
 	tw.tween_callback(func(): mi.queue_free())
 
 
+## Кровавая нова (R): кольцо урона вокруг героя. Открывается навыком на 4 уровне.
+func _cast_nova() -> void:
+	if GameState.skill_rank("blood_nova") <= 0:
+		return
+	if not GameState.spend_magic(Balance.NOVA_COST):
+		Sfx.play("sfx_lowmagic", -14.0)
+		return
+	nova_cd = Balance.NOVA_CD
+	_set_state("cast")
+	Sfx.play_at("sfx_cast", _sfx_pos(), -6.0, 0.8)
+	emit_noise(Balance.NOISE_SPIKE)
+	var center := global_position
+	var dmg: float = Balance.NOVA_DMG * GameState.spell_damage_mult()
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e == null or not is_instance_valid(e) or e.dead:
+			continue
+		var to: Vector3 = e.global_position - center
+		to.y = 0.0
+		if to.length() > Balance.NOVA_RADIUS:
+			continue
+		e.take_damage(dmg, center)
+		if e.has_method("knockback") and to.length() > 0.05:
+			e.knockback(to.normalized(), 6.0)
+	_nova_fx(center)
+	_shake(4.5, 0.35)
+	_hitstop()
+
+
+## Расходящееся кольцо крови: читается и в темноте, и на свету.
+func _nova_fx(center: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.85
+	ring.outer_radius = 1.1
+	ring.rings = 20
+	ring.ring_segments = 12
+	mi.mesh = ring
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.75, 0.06, 0.1, 0.85)
+	m.emission_enabled = true
+	m.emission = Color(0.8, 0.06, 0.1)
+	m.emission_energy_multiplier = 2.6
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = m
+	get_tree().current_scene.add_child(mi)
+	mi.global_position = center + Vector3(0, 0.18, 0)
+	var k: float = Balance.NOVA_RADIUS / 1.1
+	var tw := create_tween()
+	tw.tween_property(mi, "scale", Vector3(k, 1.0, k), 0.32)
+	tw.parallel().tween_property(m, "albedo_color:a", 0.0, 0.32)
+	tw.tween_callback(mi.queue_free)
+
+
 func _physics_process(delta: float) -> void:
 	state_t += delta
 	invuln = max(0.0, invuln - delta)
 	distract_cd = max(0.0, distract_cd - delta)
 	spike_cd = max(0.0, spike_cd - delta)
+	nova_cd = max(0.0, nova_cd - delta)
 	if dead:
 		velocity.x = move_toward(velocity.x, 0, 20 * delta)
 		velocity.z = move_toward(velocity.z, 0, 20 * delta)
@@ -583,7 +644,11 @@ func _handle_input() -> void:
 	if Input.is_action_just_pressed("spike") and spike_cd <= 0.0:
 		_cast_spike()
 		return
-	if Input.is_action_just_pressed("dash") and GameState.spend_magic(Balance.DODGE_COST):
+	if GameState.skill_rank("blood_nova") > 0 and InputMap.has_action("blood_nova") \
+			and Input.is_action_just_pressed("blood_nova") and nova_cd <= 0.0:
+		_cast_nova()
+		return
+	if Input.is_action_just_pressed("dash") and GameState.spend_magic(GameState.dodge_cost()):
 		dodge_dir = move_dir
 		dodge_dir.y = 0.0
 		if dodge_dir.length() < 0.1:
@@ -624,6 +689,7 @@ func _hit(heavy: bool) -> void:
 	if not heavy:
 		step_mult = [1.0, 14.0 / 12.0, 20.0 / 12.0][combo_step]
 	var dmg := (HEAVY_DMG if heavy else LIGHT_DMG) * step_mult * GameState.craving_damage_mult()
+	dmg *= GameState.melee_damage_mult()
 	var reach := 2.6 if heavy else 2.2
 	var fwd := -rig.global_transform.basis.z
 	fwd.y = 0.0
@@ -827,33 +893,135 @@ func _animate(dt: float) -> void:
 
 	if use_model:
 		_animate_model(dt)
+		return
 
 
 ## Анимации glTF-модели героя (Idle/Walk/Run/Sword_Slash/Roll/Death...).
+func _build_anim_tree() -> void:
+	if anim == null or anim_tree != null:
+		return
+	anim_tree = AnimationTree.new()
+	anim_tree.name = "AnimTree"
+	anim_tree.anim_player = NodePath("../" + anim.name)
+	# добавим рядом с анимационным плеером
+	var p := anim.get_parent()
+	if p:
+		p.add_child(anim_tree)
+	else:
+		add_child(anim_tree)
+	anim_tree.tree_root = AnimationNodeStateMachine.new()
+	var sm: AnimationNodeStateMachine = anim_tree.tree_root
+	var idle := ModelUtil.pick_anim(anim, ["Idle"])
+	var walk := ModelUtil.pick_anim(anim, ["Walk"])
+	var run := ModelUtil.pick_anim(anim, ["Run"])
+	var slash := ModelUtil.pick_anim(anim, ["Sword_Slash", "Slash", "Attack"])
+	var roll := ModelUtil.pick_anim(anim, ["Roll"])
+	var hit := ModelUtil.pick_anim(anim, ["HitRecieve", "HitReact"])
+	var death := ModelUtil.pick_anim(anim, ["Death"])
+	if idle != "":
+		sm.add_node("Idle", AnimationNodeAnimation.new())
+		sm.get_node("Idle").animation = idle
+	if walk != "":
+		sm.add_node("Walk", AnimationNodeAnimation.new())
+		sm.get_node("Walk").animation = walk
+	if run != "":
+		sm.add_node("Run", AnimationNodeAnimation.new())
+		sm.get_node("Run").animation = run
+	if slash != "":
+		sm.add_node("Slash", AnimationNodeAnimation.new())
+		sm.get_node("Slash").animation = slash
+	if roll != "":
+		sm.add_node("Roll", AnimationNodeAnimation.new())
+		sm.get_node("Roll").animation = roll
+	if hit != "":
+		sm.add_node("Hit", AnimationNodeAnimation.new())
+		sm.get_node("Hit").animation = hit
+	if death != "":
+		sm.add_node("Death", AnimationNodeAnimation.new())
+		sm.get_node("Death").animation = death
+	sm.add_transition("Idle", "Walk", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Run", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Walk", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Run", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Slash", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Slash", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Slash", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Slash", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Slash", "Walk", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Slash", "Run", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Roll", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Roll", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Roll", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Roll", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Roll", "Walk", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Roll", "Run", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Hit", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Hit", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Hit", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Hit", "Idle", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Hit", "Walk", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Hit", "Run", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Death", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Walk", "Death", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Run", "Death", AnimationNodeStateMachineTransition.new())
+	anim_tree.active = true
+	anim_tree.anim_player = anim.get_path()
+	anim_state = anim_tree.get("parameters/playback")
+
+
 func _animate_model(dt: float) -> void:
 	if anim == null:
 		return
 	var speed := Vector2(velocity.x, velocity.z).length()
 	if dead:
-		ModelUtil.play_key(anim, ["Death"], false)
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Death")
+		else:
+			ModelUtil.play_key(anim, ["Death"], false)
 		return
-	match state:
-		"attack":
-			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 1.05 + 0.16 * combo_step, 0.07)
-		"heavy":
-			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 0.72, 0.10)
-		"dodge":
+	if state == "attack" or state == "heavy":
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Slash")
+		else:
+			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 1.05 + 0.16 * combo_step, 0.07 if state == "attack" else 0.10)
+		if anim_tree != null:
+			anim_tree.set("parameters/Slash/speed_scale", 1.05 + 0.16 * combo_step if state == "attack" else 0.72)
+		return
+	if state == "dodge":
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Roll")
+		else:
 			ModelUtil.play_key(anim, ["Roll"], false, 1.2, 0.06)
-		"hurt":
+		if anim_tree != null:
+			anim_tree.set("parameters/Roll/speed_scale", 1.2)
+		return
+	if state == "hurt":
+		if anim_state != null and anim_state.has_method("travel"):
+			anim_state.travel("Hit")
+		else:
 			ModelUtil.play_key(anim, ["HitRecieve", "HitReact"], false, 1.1, 0.05)
-		_:
-			if speed > 0.45:
-				var running := speed > 4.4
-				var base := RUN if running else SPEED
-				ModelUtil.play_key(anim, ["Run"] if running else ["Walk"], true,
-					clampf(speed / base, 0.7, 1.6), 0.2)
-			else:
-				ModelUtil.play_key(anim, ["Idle"], true, 1.0, 0.25)
+		return
+	if anim_state != null and anim_state.has_method("travel"):
+		if speed > 0.45:
+			var running := speed > 4.4
+			anim_state.travel("Run" if running else "Walk")
+			var base := RUN if running else SPEED
+			if anim_tree != null:
+				var sc := clampf(speed / base, 0.7, 1.6)
+				anim_tree.set("parameters/Walk/speed_scale", sc)
+				anim_tree.set("parameters/Run/speed_scale", sc)
+		else:
+			anim_state.travel("Idle")
+	else:
+		if speed > 0.45:
+			var running := speed > 4.4
+			var base := RUN if running else SPEED
+			ModelUtil.play_key(anim, ["Run"] if running else ["Walk"], true,
+				clampf(speed / base, 0.7, 1.6), 0.2)
+		else:
+			ModelUtil.play_key(anim, ["Idle"], true, 1.0, 0.25)
 	if model_root != null:
 		var lean := -0.12 if state == "dodge" else 0.0
 		if crouching and state not in ["attack", "heavy", "dodge"]:

@@ -94,11 +94,30 @@ if ($Shots) {
     # Окно может не открыться (нет GPU/дисплея, занят другой экземпляр) — игра
     # тогда выходит с кодом 0 и без кадров. Поэтому проверяем не код возврата,
     # а сам лог: должны быть строки SHOT от _shots_mode(). Одна повторная попытка.
+    # Запуск только через_job с дедлайном: зависшее окно иначе остаётся
+    # открытым на весь ноутбук.
     for ($try = 1; $try -le 2; $try++) {
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        $out = & $godot --path $ws --resolution 1280x720 -- --shots 2>&1 | Out-String
-        $ErrorActionPreference = $prev
+        $jobStart = Get-Date
+        $job = Start-Job -ScriptBlock {
+            param($g, $ws)
+            $env:APPDATA = Join-Path $ws 'tools\appdata'
+            $env:LOCALAPPDATA = Join-Path $ws 'tools\localappdata'
+            $env:TEMP = Join-Path $ws 'tools\temp'
+            & $g --path $ws --resolution 1280x720 -- --shots 2>&1
+        } -ArgumentList $godot, $ws
+        $done = Wait-Job $job -Timeout 300
+        $out = (Receive-Job $job | Out-String)
+        Remove-Job $job -Force
+        if ($null -eq $done) {
+            # Снимаем только те окна, которые подняли мы: в этом дереве
+            # параллельно работает другая сессия со своим редактором Godot.
+            foreach ($proc in @(Get-Process | Where-Object { $_.ProcessName -like 'Godot_v4.4.1*' })) {
+                try {
+                    if ($proc.StartTime -gt $jobStart) { Stop-Process -Id $proc.Id -Force }
+                } catch { }
+            }
+            $out += "`nSHOT watchdog: съёмка не уложилась в 300 с, Godot снят принудительно`n"
+        }
         $out | Set-Content -Path (Join-Path $ws 'tools\last_shots.log') -Encoding UTF8
         $shotCount = ([regex]::Matches($out, '(?m)^SHOT 3d_')).Count
         if ($shotCount -gt 0 -and $out -notmatch 'SCRIPT ERROR') {
@@ -114,9 +133,27 @@ if ($Shots) {
 }
 
 if ($Export) {
+    $exe = Join-Path $ws 'build\Raskol.exe'
+    # Экспорт молча выходил с кодом 0, оставляя на диске вчерашний exe:
+    # проверяем не код возврата, а что файл действительно перезаписан.
+    $before = if (Test-Path $exe) { (Get-Item $exe).LastWriteTime } else { [datetime]::MinValue }
+    $started = Get-Date
     G @('--headless', '--path', $ws, '--import')
-    G @('--headless', '--path', $ws, '--export-release', 'Windows Desktop', (Join-Path $ws 'build\Raskol.exe'))
-    Write-Host '[OK] build\Raskol.exe собран (~110 МБ)' -ForegroundColor Green
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $out = & $godot --headless --path $ws --export-release 'Windows Desktop' $exe 2>&1 | Out-String
+    $ErrorActionPreference = $prev
+    $out | Set-Content -Path (Join-Path $ws 'tools\last_export.log') -Encoding UTF8
+    if (-not (Test-Path $exe)) { throw "Экспорт не создал $exe — см. tools\last_export.log" }
+    $after = (Get-Item $exe).LastWriteTime
+    if ($after -lt $started.AddSeconds(-5)) {
+        throw "Экспорт не перезаписал exe (mtime=$after, сборка начата $started) — см. tools\last_export.log"
+    }
+    if ($out -match 'ERROR|Cannot find export template|missing') {
+        throw "В логе экспорта есть ошибки — см. tools\last_export.log"
+    }
+    $mb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+    Write-Host "[OK] build\Raskol.exe собран ($mb МБ, $after)" -ForegroundColor Green
 }
 
 if (-not ($Import -or $Test -or $Shots -or $Models -or $Assets -or $Export)) {

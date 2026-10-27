@@ -4,6 +4,7 @@ extends Control
 signal continue_game
 signal start_story
 signal start_mission
+signal open_settings
 signal quit_game
 
 var buttons: Array[Button] = []
@@ -75,18 +76,20 @@ func _ready() -> void:
 	add_child(tag)
 
 	var has_save := SaveSystem.has_save()
-	var y := 470.0
+	var y := 452.0
 	if has_save:
 		_button("Продолжить", y, continue_game.emit)
-		y += 50.0
+		y += 46.0
 	_button("Начать историю", y, start_story.emit)
-	y += 50.0
+	y += 46.0
 	_button("Сразу к миссии", y, start_mission.emit)
-	y += 50.0
+	y += 46.0
+	_button("Настройки", y, open_settings.emit)
+	y += 46.0
 	_button("Выход", y, quit_game.emit)
 
 	var hint := Label.new()
-	hint.text = "WASD — идти · Shift — бег · ЛКМ — удар · ПКМ — тяжёлый · Space — рывок · E — поглощать · F — действие · Esc — пауза"
+	hint.text = "WASD — идти · Ctrl — красться · Shift — бег · ЛКМ — удар · ПКМ — тяжёлый · Space — рывок · Q — шип\nG — бросить камень · E — поглощать · F — действие · Esc — пауза"
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.45, 0.44, 0.4))
 	hint.position = Vector2(0, 702)

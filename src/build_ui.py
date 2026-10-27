@@ -28,6 +28,17 @@ def hx(s):
 # интерфейс
 # ---------------------------------------------------------------------------
 
+HUD_ICONS = ("attack", "dash", "spike", "eat", "sneak", "eye", "heart",
+             "key", "trust", "objective", "camp")
+# иконки предметов инвентаря: имя совпадает с полем "icon" в lore.json
+ITEM_ICONS = ("ring", "amulet", "scroll", "potion", "boots", "cloak")
+
+
+def build_icons():
+    for name in HUD_ICONS + ITEM_ICONS:
+        icon(name).save(os.path.join(UI, f"icon_{name}.png"))
+
+
 def panel(w=48, h=48, border=3):
     """Девятислайсовая панель: камень с металлической окантовкой."""
     c = Canvas(w, h)
@@ -129,6 +140,52 @@ def icon(kind: str, size=20):
         c.poly([(4, 16), (10, 5), (16, 16)], hx(P.CLOTH[3]))
         c.poly([(7, 16), (10, 9), (13, 16)], hx(P.CLOTH[5]))
         c.rect(9, 12, 11, 16, hx("#0a0d13"))
+    # --- предметы инвентаря ---
+    elif kind == "ring":          # золотое кольцо с камнем
+        c.circle(9, 12, 5, gold)
+        c.circle(9, 12, 3, hx("#0a0d13"))
+        c.px(5, 11, hx(P.GOLD[5]))
+        c.px(6, 9, hx(P.GOLD[5]))
+        c.rect(7, 3, 11, 7, hx(P.GOLD[3]))
+        c.ellipse(8, 4, 10, 6, red)
+        c.px(9, 4, hx(P.BLOOD[6]))
+    elif kind == "amulet":        # цепочка и капля-подвеска
+        for x in range(4, 16):
+            c.px(x, 3 + abs(x - 9), hx(P.GOLD[3]))
+        c.ellipse(6, 8, 13, 17, hx(P.IRON[3]))
+        c.ellipse(7, 9, 12, 16, hx(P.IRON[4]))
+        c.ellipse(8, 10, 11, 14, hx(P.MAGIC[3]))
+        c.px(9, 11, hx(P.MAGIC[5]))
+    elif kind == "scroll":        # свиток в сургучной ленте
+        c.rect(4, 3, 15, 17, hx(P.BONE[5]))
+        c.rect(3, 2, 16, 4, hx(P.BONE[4]))
+        c.rect(3, 16, 16, 18, hx(P.BONE[4]))
+        for y in (7, 10, 13):
+            c.hline(6, 13, y, hx(P.BONE[2]))
+        c.vline(12, 3, 17, red)
+        c.hline(11, 13, 5, dark)
+    elif kind == "potion":        # флакон с живительным
+        c.rect(8, 1, 11, 3, hx(P.LEATHER[3]))
+        c.rect(8, 4, 11, 7, hx(P.IRON[2]))
+        c.ellipse(3, 6, 16, 18, hx(P.IRON[3]))
+        c.ellipse(5, 9, 14, 17, dark)
+        c.ellipse(6, 11, 13, 16, red)
+        c.px(7, 12, hx(P.BLOOD[6]))
+        c.vline(5, 8, 12, hx(P.IRON[5]))
+    elif kind == "boots":         # сапог со швом
+        c.rect(6, 2, 11, 13, hx(P.LEATHER[4]))
+        c.rect(4, 12, 15, 16, hx(P.LEATHER[3]))
+        c.rect(4, 16, 16, 17, hx(P.LEATHER[1]))
+        c.hline(6, 11, 4, hx(P.LEATHER[5]))
+        c.hline(6, 11, 7, hx(P.LEATHER[2]))
+        c.px(13, 14, hx(P.LEATHER[5]))
+    elif kind == "cloak":         # плащ с капюшоном
+        c.poly([(10, 2), (3, 17), (17, 17)], hx(P.CLOTH[2]))
+        c.poly([(10, 5), (6, 17), (14, 17)], hx(P.CLOTH[4]))
+        c.ellipse(6, 2, 14, 9, hx(P.CLOTH[1]))
+        c.ellipse(8, 4, 12, 8, hx("#0a0d13"))
+        c.circle(10, 9, 1, gold)
+        c.line([(5, 16), (10, 12), (15, 16)], hx(P.CLOTH[3]))
     c.outline(hx(P.INK))
     return c
 
@@ -518,7 +575,6 @@ def fog_texture(size=256):
 def build():
     for d in (UI, FX, ART):
         os.makedirs(d, exist_ok=True)
-
     panel().save(os.path.join(UI, "panel.png"))
     bar_bg().save(os.path.join(UI, "bar_bg.png"))
     bar(color="#8f2436", dark="#2a0711", light="#e66a80").save(os.path.join(UI, "bar_health.png"))
@@ -526,8 +582,7 @@ def build():
     bar(color="#5c1026", dark="#120409", light="#b23a74").save(os.path.join(UI, "bar_craving.png"))
     bar(color="#2f6a8a", dark="#0d1a24", light="#6fb3d0").save(os.path.join(UI, "bar_trust.png"))
 
-    for name in ("attack", "dash", "spike", "eat", "sneak", "eye", "heart", "key", "trust", "objective", "camp"):
-        icon(name).save(os.path.join(UI, f"icon_{name}.png"))
+    build_icons()
 
     p = portrait("hero", chars.HERO, dict(gear={"scar": True}), "#2a1518")
     p.save(os.path.join(UI, "portrait_hero.png"))

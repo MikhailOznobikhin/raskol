@@ -28,6 +28,8 @@ func _register_input() -> void:
 	_add_action("move_down", [KEY_S, KEY_DOWN])
 	_add_action("dash", [KEY_SPACE])
 	_add_action("spike", [KEY_Q])
+	_add_action("blood_nova", [KEY_R])
+	_add_action("skills", [KEY_K])
 	_add_action("absorb", [KEY_E])
 	_add_action("interact", [KEY_F])
 	_add_action("sneak", [KEY_SHIFT])
@@ -105,6 +107,9 @@ func show_cinema() -> void:
 
 func start_mission(load_save := false) -> void:
 	Sfx.stop_all_loops(0.5)
+	if not load_save:
+		# новая миссия — новая прокачка; «Продолжить» восстанавливает её из сейва
+		GameState.reset_progression()
 	var script: GDScript = load("res://scripts/mission3d.gd")
 	var m: Node = script.new()
 	m.load_on_start = load_save
@@ -128,6 +133,12 @@ func _shots_mode() -> void:
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(Vector2i(1280, 720))
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# страховка: если съёмка застрянет на await, окно закроется само —
+	# иначе запущенная игра остаётся висеть на ноутбуке до утра
+	var wd := get_tree().create_timer(150.0)
+	wd.timeout.connect(func():
+		print("SHOT watchdog: съёмка не завершилась, выхожу")
+		get_tree().quit())
 	show_menu()
 	await get_tree().create_timer(1.0).timeout
 	await _shot("3d_menu")
@@ -155,6 +166,41 @@ func _shots_mode() -> void:
 			m.cam.yaw = PI * 0.5
 	await get_tree().create_timer(1.5).timeout
 	await _shot("3d_02")
+	# геометрия: два кадра, по которым и проверяется «квадратность» уровня —
+	# длинный коридор (кладка, арки, мостовая) и зал (ступени свода, столбы).
+	# HUD на этих двух кадрах полностью выключен: удерживаемая клавиша «I»
+	# иначе открывает инвентарь, а инвентарь ставит дерево на паузу — камера
+	# замирает и кадр показывает неизвестно что.
+	if m and m.hud:
+		m.hud.auto = false
+		m.hud.toggle_inventory(false)
+		m.hud.set_process(false)
+		m.hud.visible = false
+	if m and m.hero:
+		m.hero.global_position = Vector3(45.0, 0.2, 53.0)
+		if m.cam:
+			m.cam.yaw = 0.0
+			m.cam.pitch = -0.05
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_wall")
+		# зал с опорой в кадре: виден курс кладки, капитель и карниз.
+		# Камеру ставим так, чтобы рука пружины шла по открытому пространству,
+		# иначе она липнет к стене и кадр упирается в затылок героя.
+		m.hero.global_position = Vector3(108.0, 0.2, 32.0)
+		if m.cam:
+			m.cam.yaw = PI * 0.5
+			m.cam.pitch = 0.05
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_course")
+		m.hero.global_position = Vector3(96.0, 0.2, 32.0)
+		if m.cam:
+			m.cam.yaw = 0.0
+			m.cam.pitch = 0.24
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_vault")
+	if m and m.hud:
+		m.hud.visible = true
+		m.hud.set_process(true)
 	# бег: проверяем, что модель развёрнута по движению (видим спину, а не лицо)
 	Input.action_press("move_up")
 	await get_tree().create_timer(1.0).timeout
@@ -464,6 +510,27 @@ func _test_mode() -> void:
 	g.take_damage(999.0, Vector3.ZERO)
 	await get_tree().create_timer(0.4).timeout
 	print("TEST guard dead=", g.dead, " killed=", GameState.guards_killed)
+
+	# --- прокачка: опыт за убийство, уровень, очки ---
+	print("TEST xp level=", GameState.level, " xp=", GameState.xp, " need=", GameState.xp_need(),
+		" stat_points=", GameState.stat_points, " skill_points=", GameState.skill_points)
+	if GameState.level < 2 or GameState.stat_points < 1 or GameState.skill_points < 1:
+		print("TEST FAIL: за стража не дали опыт/уровень/очки")
+		get_tree().quit()
+		return
+	var hp_max0: float = GameState.get_max_health()
+	GameState.add_stat("vitality")
+	print("TEST stat vitality hp_max=", GameState.get_max_health(), " было=", hp_max0)
+	if GameState.get_max_health() <= hp_max0:
+		print("TEST FAIL: живучесть не подняла максимум здоровья")
+		get_tree().quit()
+		return
+	if not GameState.unlock_skill("iron_arm"):
+		print("TEST FAIL: навык iron_arm не изучен")
+		get_tree().quit()
+		return
+	print("TEST skill iron_arm rank=", GameState.skill_rank("iron_arm"),
+		" melee_mult=", snappedf(GameState.melee_damage_mult(), 0.01))
 	m.cam.shake(3.0, 0.2)
 	m._open_gate()
 	await get_tree().create_timer(0.3).timeout
@@ -475,6 +542,38 @@ func _test_mode() -> void:
 	m.boss.take_damage(999.0, Vector3.ZERO)
 	await get_tree().create_timer(1.6).timeout
 	print("TEST boss dead=", m.boss_dead, " objective=", m.objective)
+	# --- «Кровавая нова»: открывается на 4 уровне, тратит магию и уходит в откат ---
+	print("TEST level after boss=", GameState.level, " skill_points=", GameState.skill_points)
+	if not GameState.unlock_skill("blood_nova"):
+		print("TEST FAIL: blood_nova не открылась на уровне ", GameState.level)
+		get_tree().quit()
+		return
+	GameState.add_magic(60.0)
+	var magic_before: float = GameState.magic
+	m.hero._cast_nova()
+	await get_tree().create_timer(0.2).timeout
+	print("TEST nova cost=", snappedf(magic_before - GameState.magic, 0.1),
+		" cd=", snappedf(m.hero.nova_cd, 0.01))
+	if m.hero.nova_cd <= 0.0:
+		print("TEST FAIL: нова не ушла в откат")
+		get_tree().quit()
+		return
+	# --- экран развития: сборка UI не должна падать, Esc возвращает игру ---
+	m.hud._open_development()
+	await get_tree().process_frame
+	var dev: Control = m.hud.development_root
+	print("TEST dev screen open=", dev != null, " paused=", get_tree().paused)
+	if dev == null:
+		print("TEST FAIL: экран развития не открылся")
+		get_tree().quit()
+		return
+	dev._close()
+	await get_tree().process_frame
+	print("TEST dev screen closed=", m.hud.development_root == null, " paused=", get_tree().paused)
+	if m.hud.development_root != null or get_tree().paused:
+		print("TEST FAIL: экран развития не закрылся")
+		get_tree().quit()
+		return
 	m._finish()
 	await get_tree().create_timer(1.6).timeout
 	print("TEST DONE escaped=", GameState.escaped)
