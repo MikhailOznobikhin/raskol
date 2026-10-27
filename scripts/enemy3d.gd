@@ -90,17 +90,17 @@ func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1
 	var cap := CapsuleShape3D.new()
-	cap.radius = 0.38 if not is_boss else 0.55
-	cap.height = 1.6 if not is_boss else 2.1
+	cap.radius = 0.34 if not is_boss else 0.55
+	cap.height = 1.3 if not is_boss else 2.1
 	var col := CollisionShape3D.new()
 	col.shape = cap
-	col.position = Vector3(0, 0.85, 0)
+	col.position = Vector3(0, 0.65 if not is_boss else 1.05, 0)
 	add_child(col)
 	_build_rig()
 	_attach_model()
 	_build_bar()
 	_build_hurtbox()
-	_add_blob_shadow(0.6 if not is_boss else 0.95)
+	_add_blob_shadow(0.5 if not is_boss else 0.9)
 
 
 func _mat(c: Color, rough := 0.8, metal := 0.0) -> StandardMaterial3D:
@@ -193,11 +193,11 @@ func _build_rig() -> void:
 			head.add_child(horn)
 
 
-## Надевает glTF-модель (зомби для стража, дракон для Пожирателя).
+## Надевает glTF-модель (гном-страж из Mixamo; босс — бронированный вариант).
 func _attach_model() -> void:
 	ModelUtil.hide_meshes(rig)
 	rig.scale = Vector3.ONE
-	var path := "res://assets/monster.glb" if is_boss else "res://assets/guard.glb"
+	var path := "res://assets/boss_mixamo.glb" if is_boss else "res://assets/guard_mixamo.glb"
 	var h := Balance.BOSS_MODEL_HEIGHT if is_boss else Balance.GUARD_MODEL_HEIGHT
 	var model := ModelUtil.spawn(rig, path, h)
 	if model == null:
@@ -212,10 +212,30 @@ func _attach_model() -> void:
 		_build_anim_tree()
 	flash_mat = ModelUtil.make_flash_material()
 	ModelUtil.apply_overlay(model, flash_mat)
-	if is_boss:
-		model.position.y += 0.45
+	_attach_weapon(model)
 	if anim != null and anim_tree == null:
-		ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+		ModelUtil.play_key(anim, ["Idle"], true)
+
+
+## Вешает меч в правую кисть стража (в Mixamo-меше оружия нет).
+## Босс дерётся руками — хлыст/цепь по роадмапу C4 добавим позже.
+func _attach_weapon(model: Node3D) -> void:
+	if is_boss:
+		return
+	var att := ModelUtil.bone_attach(model, ["Wrist.R", "mixamorig_RightHand", "RightHand"])
+	if att == null:
+		return
+	var grip := Node3D.new()
+	att.add_child(grip)
+	# кости glTF приходят с масштабом ~100 (сантиметры) — компенсируем
+	var ws: Vector3 = att.global_transform.basis.get_scale()
+	if ws.x > 0.0001 and ws.y > 0.0001 and ws.z > 0.0001:
+		grip.scale = Vector3(1.0 / ws.x, 1.0 / ws.y, 1.0 / ws.z)
+	var tool := ModelUtil.spawn(grip, "res://assets/weapon_sword.glb", 0.85, 0.0)
+	if tool == null:
+		return
+	tool.rotation_degrees = Vector3(0, 0, 90)
+	tool.position = Vector3(0, 0.3, 0)
 
 
 func _build_bar() -> void:
@@ -228,7 +248,7 @@ func _build_bar() -> void:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg.material_override = m
-	bg.position = Vector3(0, 2.2 if not is_boss else 3.05, 0)
+	bg.position = Vector3(0, 1.75 if not is_boss else 2.65, 0)
 	add_child(bg)
 	bar_bg = bg
 
@@ -645,32 +665,19 @@ func _build_anim_tree() -> void:
 		add_child(anim_tree)
 	anim_tree.tree_root = AnimationNodeStateMachine.new()
 	var sm: AnimationNodeStateMachine = anim_tree.tree_root
-	if is_boss:
-		var fid := ModelUtil.pick_anim(anim, ["Flying_Idle"])
-		var ff := ModelUtil.pick_anim(anim, ["Fast_Flying"])
-		var att := ModelUtil.pick_anim(anim, ["Headbutt", "Punch"])
-		var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
-		if fid != "":
-			sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = fid
-		if ff != "":
-			sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = ff
-		if att != "":
-			sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = att
-		if die != "":
-			sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
-	else:
-		var idle := ModelUtil.pick_anim(anim, ["Idle"])
-		var walk := ModelUtil.pick_anim(anim, ["Walk", "Running"])
-		var attack := ModelUtil.pick_anim(anim, ["Attack", "Headbutt", "Punch"])
-		var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
-		if idle != "":
-			sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = idle
-		if walk != "":
-			sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = walk
-		if attack != "":
-			sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = attack
-		if die != "":
-			sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
+	# у стражи и босса одинаковый набор клипов (Mixamo-риг), ключи общие
+	var idle := ModelUtil.pick_anim(anim, ["Idle"])
+	var walk := ModelUtil.pick_anim(anim, ["Walk", "Running"])
+	var attack := ModelUtil.pick_anim(anim, ["Attack", "Headbutt", "Punch"])
+	var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
+	if idle != "":
+		sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = idle
+	if walk != "":
+		sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = walk
+	if attack != "":
+		sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = attack
+	if die != "":
+		sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
 	sm.add_transition("Idle", "Move", AnimationNodeStateMachineTransition.new())
 	sm.add_transition("Move", "Idle", AnimationNodeStateMachineTransition.new())
 	sm.add_transition("Idle", "Attack", AnimationNodeStateMachineTransition.new())
@@ -684,7 +691,7 @@ func _build_anim_tree() -> void:
 	anim_state = anim_tree.get("parameters/playback")
 
 
-## Анимации модели: Idle/Walk/Attack/HitReact/Death (страж) и полёт (босс).
+## Анимации модели: Idle/Walk/Attack/Death — набор клипов у стражи и босса общий.
 func _animate_model(dt: float) -> void:
 	if anim == null:
 		return
@@ -699,7 +706,7 @@ func _animate_model(dt: float) -> void:
 		if anim_state != null and anim_state.has_method("travel"):
 			anim_state.travel("Attack")
 		else:
-			ModelUtil.play_key(anim, ["Headbutt", "Punch"] if is_boss else ["Attack"], false, 1.0)
+			ModelUtil.play_key(anim, ["Attack"], false, 1.0)
 		if anim_tree != null:
 			anim_tree.set("parameters/Attack/speed_scale", 1.0)
 		return
@@ -713,14 +720,11 @@ func _animate_model(dt: float) -> void:
 			anim_state.travel("Idle")
 	else:
 		if sp > 0.25:
-			ModelUtil.play_key(anim, ["Fast_Flying"] if is_boss else ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
+			ModelUtil.play_key(anim, ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
 		else:
-			ModelUtil.play_key(anim, ["Flying_Idle"] if is_boss else ["Idle"], true)
+			ModelUtil.play_key(anim, ["Idle"], true)
 	if flash_mat != null:
 		flash_mat.albedo_color.a = clampf(flash / 0.18, 0.0, 1.0) * 0.5
-	if model_root != null and is_boss:
-		# дракон чуть покачивается в воздухе
-		model_root.position.y = 0.45 + sin(Time.get_ticks_msec() / 620.0) * 0.06
 
 
 func _bark() -> void:
@@ -735,7 +739,7 @@ func _bark() -> void:
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.modulate = Color(0.95, 0.86, 0.7, 0.0)
 	l.outline_size = 8
-	l.position = Vector3(0, 2.35 if not is_boss else 3.3, 0)
+	l.position = Vector3(0, 1.9 if not is_boss else 2.9, 0)
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		var d: float = cam.global_position.distance_to(global_position)
@@ -786,9 +790,9 @@ func _build_hurtbox() -> void:
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.5 if not is_boss else 0.8
-	cap.height = 1.4 if not is_boss else 2.0
+	cap.height = 1.2 if not is_boss else 2.0
 	cs.shape = cap
-	cs.position = Vector3(0, 0.9 if not is_boss else 1.2, 0)
+	cs.position = Vector3(0, 0.75 if not is_boss else 1.2, 0)
 	hurt.add_child(cs)
 	add_child(hurt)
 

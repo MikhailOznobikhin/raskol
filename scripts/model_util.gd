@@ -10,6 +10,8 @@ class_name ModelUtil
 const NATIVE_HEIGHT := {
 	"res://assets/player.glb": 1.83,
 	"res://assets/hero_mixamo.glb": 2.047,
+	"res://assets/guard_mixamo.glb": 2.058,
+	"res://assets/boss_mixamo.glb": 2.152,
 	"res://assets/guard.glb": 4.99,
 	"res://assets/guard_zombie.glb": 4.05,
 	"res://assets/monster.glb": 2.84,

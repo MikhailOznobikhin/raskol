@@ -62,8 +62,8 @@ const BOSS_DETECT := 18.0
 
 # --- Модели (высота в метрах) ---
 const HERO_MODEL_HEIGHT := 1.42
-const GUARD_MODEL_HEIGHT := 1.80
-const BOSS_MODEL_HEIGHT := 2.30
+const GUARD_MODEL_HEIGHT := 1.45   # стражи — гномы: чуть выше героя
+const BOSS_MODEL_HEIGHT := 2.30    # ≈1.6× стража, уникальный силуэт
 
 # --- Прокачка: опыт и уровни ---
 const XP_GUARD := 100            # опыт за убитого стражника
