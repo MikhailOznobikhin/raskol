@@ -10,31 +10,29 @@ signal menu_requested
 var objective_label: Label
 var objective_panel: Control
 var objective_header: Label
-var hp_fill: TextureRect
-var magic_fill: TextureRect
-var craving_fill: TextureRect
-var xp_fill: TextureRect
+var hp_fill: ColorRect
+var magic_fill: ColorRect
+var craving_fill: ColorRect
+var xp_fill: ColorRect
 var level_label: Label
 var points_label: Label
-var r_icon: TextureRect
-var r_label: Label
 var development_root: Control
 var _dev_closed_frame := -1
-var trust_fill: TextureRect
+var trust_fill: ColorRect
 var trust_label: Label
 var prompt_label: Label
 var hint_label: Label
 var counters_label: Label
 var dialogue_root: Control
-var dialogue_panel: NinePatchRect
+var dialogue_panel: ColorRect
 var portrait: TextureRect
 var speaker_label: Label
 var text_label: Label
 var choice_root: VBoxContainer
 var channel_root: Control
-var channel_fill: TextureRect
+var channel_fill: ColorRect
 var boss_root: Control
-var boss_fill: TextureRect
+var boss_fill: ColorRect
 var boss_name: Label
 var fade_rect: ColorRect
 var damage_rect: ColorRect
@@ -51,6 +49,13 @@ var choices_open := false
 var auto := false
 
 const BAR_W := 132
+const COLOR_INK := Color(0.012, 0.016, 0.022, 0.94)
+const COLOR_PARCHMENT := Color(0.94, 0.90, 0.80)
+const COLOR_MUTED := Color(0.76, 0.75, 0.70)
+const COLOR_GOLD := Color(0.68, 0.53, 0.29)
+const COLOR_HEALTH := Color(0.62, 0.19, 0.20)
+const COLOR_MAGIC := Color(0.33, 0.47, 0.58)
+const COLOR_CRAVING := Color(0.70, 0.39, 0.20)
 
 
 func _ready() -> void:
@@ -65,16 +70,17 @@ func _ready() -> void:
 	_refresh_progression()
 
 
-func _panel(pos: Vector2, size: Vector2) -> NinePatchRect:
-	var p := NinePatchRect.new()
-	p.texture = Art.tex("res://assets/ui/panel.png")
-	p.patch_margin_left = 5
-	p.patch_margin_right = 5
-	p.patch_margin_top = 5
-	p.patch_margin_bottom = 5
+func _panel(pos: Vector2, size: Vector2) -> Panel:
+	var p := Panel.new()
 	p.position = pos
 	p.size = size
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = COLOR_INK
+	style.border_color = Color(COLOR_GOLD, 0.8)
+	style.border_width_left = 1
+	style.content_margin_left = 8.0
+	p.add_theme_stylebox_override("panel", style)
 	add_child(p)
 	return p
 
@@ -86,7 +92,7 @@ func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Col
 	l.size = size
 	l.add_theme_font_size_override("font_size", fsize)
 	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.95))
 	l.add_theme_constant_override("shadow_offset_x", 1)
 	l.add_theme_constant_override("shadow_offset_y", 1)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -94,112 +100,86 @@ func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Col
 	return l
 
 
-func _bar(pos: Vector2, tex_path: String, icon_path: String) -> TextureRect:
-	var bg := TextureRect.new()
-	bg.texture = Art.tex("res://assets/ui/bar_bg.png")
+func _bar(pos: Vector2, color: Color, icon_path: String) -> ColorRect:
+	var bg := ColorRect.new()
+	bg.color = Color(0.10, 0.105, 0.11, 0.9)
 	bg.position = pos
-	bg.size = Vector2(BAR_W, 7)
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.size = Vector2(BAR_W - 2, 4)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	var fill := TextureRect.new()
-	fill.texture = Art.tex(tex_path)
-	fill.position = pos + Vector2(1, 1)
-	fill.size = Vector2(BAR_W - 2, 5)
-	fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	fill.stretch_mode = TextureRect.STRETCH_SCALE
+	var fill := ColorRect.new()
+	fill.color = color
+	fill.position = pos + Vector2(1, 0)
+	fill.size = Vector2(BAR_W - 2, 4)
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(fill)
 	var icon := TextureRect.new()
 	icon.texture = Art.tex(icon_path)
-	icon.position = pos + Vector2(-14, -6)
-	icon.size = Vector2(12, 12)
+	icon.position = pos + Vector2(-14, -3)
+	icon.size = Vector2(10, 10)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.modulate = COLOR_PARCHMENT
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(icon)
 	return fill
 
 
 func _build() -> void:
 	# --- задача слева сверху ---
-	objective_panel = _panel(Vector2(8, 8), Vector2(268, 40))
-	objective_header = _label("ЗАДАЧА", Vector2(16, 11), Vector2(60, 12), 8, Color(0.72, 0.62, 0.42))
-	objective_label = _label("", Vector2(16, 22), Vector2(252, 22), 11)
+	objective_panel = _panel(Vector2(12, 12), Vector2(260, 38))
+	objective_header = _label("ЦЕЛЬ", Vector2(24, 15), Vector2(60, 10), 7, COLOR_GOLD)
+	objective_label = _label("", Vector2(24, 27), Vector2(238, 18), 10, COLOR_PARCHMENT)
 	objective_panel.visible = false
 	objective_header.visible = false
-	_panel(Vector2(8, 52), Vector2(180, 20))
-	counters_label = _label("Записки: 0/5 · Предметы: 0/6", Vector2(14, 56), Vector2(170, 14), 8,
-		Color(0.72, 0.68, 0.58))
+	_panel(Vector2(12, 54), Vector2(228, 54))
+	counters_label = _label("Записки 0/5  ·  Предметы 0/6", Vector2(20, 59), Vector2(212, 14), 8,
+		COLOR_MUTED)
 
 	# --- уровень и полоса опыта ---
-	_panel(Vector2(8, 76), Vector2(180, 20))
-	level_label = _label("УР. 1", Vector2(14, 80), Vector2(70, 12), 8, Color(0.86, 0.8, 0.6))
-	var xbg := TextureRect.new()
-	xbg.texture = Art.tex("res://assets/ui/bar_bg.png")
-	xbg.position = Vector2(86, 83)
-	xbg.size = Vector2(94, 6)
-	xbg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	xbg.stretch_mode = TextureRect.STRETCH_SCALE
+	level_label = _label("УР. 1", Vector2(20, 78), Vector2(54, 14), 9, COLOR_PARCHMENT)
+	var xbg := ColorRect.new()
+	xbg.color = Color(0.10, 0.105, 0.11, 0.9)
+	xbg.position = Vector2(70, 81)
+	xbg.size = Vector2(112, 3)
+	xbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(xbg)
-	xp_fill = TextureRect.new()
-	xp_fill.texture = Art.tex("res://assets/ui/bar_trust.png")
-	xp_fill.position = Vector2(87, 84)
-	xp_fill.size = Vector2(0, 4)
-	xp_fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	xp_fill.stretch_mode = TextureRect.STRETCH_SCALE
+	xp_fill = ColorRect.new()
+	xp_fill.color = COLOR_GOLD
+	xp_fill.position = Vector2(70, 81)
+	xp_fill.size = Vector2(0, 3)
+	xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(xp_fill)
-	points_label = _label("", Vector2(8, 98), Vector2(196, 12), 7, Color(1.0, 0.9, 0.62))
+	points_label = _label("", Vector2(20, 94), Vector2(212, 14), 8, COLOR_GOLD)
 
 	# --- доверие справа сверху ---
-	_panel(Vector2(470, 8), Vector2(162, 34))
-	_label("ДОВЕРИЕ АЛЬЯНСА", Vector2(478, 11), Vector2(150, 12), 7, Color(0.62, 0.66, 0.72))
-	var tb := TextureRect.new()
-	tb.texture = Art.tex("res://assets/ui/bar_bg.png")
-	tb.position = Vector2(478, 24)
-	tb.size = Vector2(120, 7)
-	tb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tb.stretch_mode = TextureRect.STRETCH_SCALE
+	_panel(Vector2(466, 8), Vector2(166, 34))
+	_label("ДОВЕРИЕ", Vector2(474, 13), Vector2(94, 12), 8, COLOR_MUTED)
+	var tb := ColorRect.new()
+	tb.color = Color(0.10, 0.105, 0.11, 0.9)
+	tb.position = Vector2(474, 30)
+	tb.size = Vector2(122, 3)
+	tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(tb)
-	trust_fill = TextureRect.new()
-	trust_fill.texture = Art.tex("res://assets/ui/bar_trust.png")
-	trust_fill.position = Vector2(479, 25)
-	trust_fill.size = Vector2(60, 5)
-	trust_fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	trust_fill.stretch_mode = TextureRect.STRETCH_SCALE
+	trust_fill = ColorRect.new()
+	trust_fill.color = COLOR_MAGIC
+	trust_fill.position = Vector2(474, 30)
+	trust_fill.size = Vector2(61, 3)
+	trust_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(trust_fill)
-	trust_label = _label("-40", Vector2(602, 22), Vector2(30, 12), 9, Color(0.7, 0.78, 0.85))
+	trust_label = _label("-40", Vector2(602, 25), Vector2(30, 12), 8, COLOR_PARCHMENT)
 
 	# --- панель героя слева снизу ---
-	_panel(Vector2(8, 302), Vector2(228, 50))
-	_label("ТОРВИН ГРИМ", Vector2(16, 305), Vector2(140, 14), 9, Color(0.78, 0.70, 0.55))
-	hp_fill = _bar(Vector2(28, 318), "res://assets/ui/bar_health.png", "res://assets/ui/icon_heart.png")
-	magic_fill = _bar(Vector2(28, 331), "res://assets/ui/bar_magic.png", "res://assets/ui/icon_spike.png")
-	craving_fill = _bar(Vector2(28, 344), "res://assets/ui/bar_craving.png", "res://assets/ui/icon_eye.png")
-
-	# --- способности справа снизу ---
-	_panel(Vector2(456, 306), Vector2(176, 46))
-	var names := ["ЛКМ", "ПКМ", "Space", "Q", "R"]
-	var icons := ["icon_attack", "icon_eat", "icon_dash", "icon_spike", "icon_eye"]
-	for i in 5:
-		var icon := TextureRect.new()
-		icon.texture = Art.tex("res://assets/ui/%s.png" % icons[i])
-		icon.position = Vector2(462 + i * 34, 310)
-		icon.size = Vector2(18, 18)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		add_child(icon)
-		var key_label := _label(names[i], Vector2(462 + i * 34, 330), Vector2(30, 12), 7,
-			Color(0.62, 0.60, 0.54))
-		if i == 4:
-			# слот R показываем только после изучения «Кровавой новы»
-			r_icon = icon
-			r_label = key_label
-			icon.visible = false
-			key_label.visible = false
+	_panel(Vector2(8, 296), Vector2(172, 58))
+	_label("ТОРВИН ГРИМ", Vector2(16, 300), Vector2(140, 14), 9, COLOR_PARCHMENT)
+	hp_fill = _bar(Vector2(30, 318), COLOR_HEALTH, "res://assets/ui/icon_heart.png")
+	magic_fill = _bar(Vector2(30, 330), COLOR_MAGIC, "res://assets/ui/icon_spike.png")
+	craving_fill = _bar(Vector2(30, 342), COLOR_CRAVING, "res://assets/ui/icon_eye.png")
 
 	# --- подсказка взаимодействия ---
-	prompt_label = _label("", Vector2(0, 258), Vector2(640, 18), 11, Color(0.95, 0.88, 0.7))
+	prompt_label = _label("", Vector2(0, 258), Vector2(640, 18), 10, COLOR_PARCHMENT)
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint_label = _label("", Vector2(0, 274), Vector2(640, 18), 10, Color(0.72, 0.72, 0.7))
+	hint_label = _label("", Vector2(0, 274), Vector2(640, 18), 8, COLOR_MUTED)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	# --- канал поглощения ---
@@ -208,20 +188,16 @@ func _build() -> void:
 	channel_root.size = Vector2(104, 10)
 	channel_root.visible = false
 	add_child(channel_root)
-	var cbg := NinePatchRect.new()
-	cbg.texture = Art.tex("res://assets/ui/panel.png")
-	cbg.patch_margin_left = 5
-	cbg.patch_margin_right = 5
-	cbg.patch_margin_top = 5
-	cbg.patch_margin_bottom = 5
-	cbg.size = Vector2(104, 10)
+	var cbg := ColorRect.new()
+	cbg.color = Color(0.10, 0.105, 0.11, 0.9)
+	cbg.size = Vector2(104, 3)
+	cbg.position = Vector2(0, 3)
 	channel_root.add_child(cbg)
-	channel_fill = TextureRect.new()
-	channel_fill.texture = Art.tex("res://assets/ui/bar_magic.png")
-	channel_fill.position = Vector2(2, 2)
-	channel_fill.size = Vector2(0, 6)
-	channel_fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	channel_fill.stretch_mode = TextureRect.STRETCH_SCALE
+	channel_fill = ColorRect.new()
+	channel_fill.color = COLOR_CRAVING
+	channel_fill.position = Vector2(0, 3)
+	channel_fill.size = Vector2(0, 3)
+	channel_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	channel_root.add_child(channel_fill)
 
 	# --- диалог ---
@@ -229,35 +205,39 @@ func _build() -> void:
 	dialogue_root.visible = false
 	dialogue_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dialogue_root)
-	var dpanel := NinePatchRect.new()
-	dpanel.texture = Art.tex("res://assets/ui/panel.png")
-	dpanel.patch_margin_left = 6
-	dpanel.patch_margin_right = 6
-	dpanel.patch_margin_top = 6
-	dpanel.patch_margin_bottom = 6
-	dpanel.position = Vector2(36, 268)
-	dpanel.size = Vector2(568, 80)
+	var dpanel := ColorRect.new()
+	dpanel.color = Color(COLOR_INK, 0.96)
+	dpanel.position = Vector2(36, 278)
+	dpanel.size = Vector2(568, 70)
+	dpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dialogue_root.add_child(dpanel)
 	dialogue_panel = dpanel
+	var dialogue_accent := ColorRect.new()
+	dialogue_accent.color = COLOR_GOLD
+	dialogue_accent.position = Vector2(36, 278)
+	dialogue_accent.size = Vector2(2, 70)
+	dialogue_accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialogue_root.add_child(dialogue_accent)
 	portrait = TextureRect.new()
-	portrait.position = Vector2(44, 274)
-	portrait.size = Vector2(64, 64)
+	portrait.position = Vector2(48, 289)
+	portrait.size = Vector2(48, 48)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	dialogue_root.add_child(portrait)
 	speaker_label = Label.new()
-	speaker_label.position = Vector2(120, 272)
-	speaker_label.size = Vector2(420, 16)
-	speaker_label.add_theme_font_size_override("font_size", 12)
-	speaker_label.add_theme_color_override("font_color", Color(0.86, 0.74, 0.48))
+	speaker_label.position = Vector2(112, 287)
+	speaker_label.size = Vector2(440, 14)
+	speaker_label.add_theme_font_size_override("font_size", 10)
+	speaker_label.add_theme_color_override("font_color", COLOR_GOLD)
 	dialogue_root.add_child(speaker_label)
 	text_label = Label.new()
-	text_label.position = Vector2(120, 290)
-	text_label.size = Vector2(470, 48)
-	text_label.add_theme_font_size_override("font_size", 11)
-	text_label.add_theme_color_override("font_color", Color(0.88, 0.86, 0.8))
+	text_label.position = Vector2(112, 305)
+	text_label.size = Vector2(470, 36)
+	text_label.add_theme_font_size_override("font_size", 10)
+	text_label.add_theme_color_override("font_color", COLOR_PARCHMENT)
 	text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	text_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	text_label.add_theme_constant_override("line_spacing", 2)
 	dialogue_root.add_child(text_label)
 
 	# --- варианты выбора ---
@@ -273,36 +253,24 @@ func _build() -> void:
 	boss_root.visible = false
 	add_child(boss_root)
 	boss_name = Label.new()
-	boss_name.position = Vector2(300, 47)
-	boss_name.size = Vector2(320, 16)
+	boss_name.position = Vector2(200, 30)
+	boss_name.size = Vector2(240, 14)
 	boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	boss_name.add_theme_font_size_override("font_size", 12)
-	boss_name.add_theme_color_override("font_color", Color(0.86, 0.4, 0.42))
+	boss_name.add_theme_font_size_override("font_size", 9)
+	boss_name.add_theme_color_override("font_color", Color(0.78, 0.38, 0.38))
 	boss_root.add_child(boss_name)
-	var bpanel := NinePatchRect.new()
-	bpanel.texture = Art.tex("res://assets/ui/panel.png")
-	bpanel.patch_margin_left = 5
-	bpanel.patch_margin_right = 5
-	bpanel.patch_margin_top = 5
-	bpanel.patch_margin_bottom = 5
-	bpanel.position = Vector2(300, 44)
-	bpanel.size = Vector2(320, 38)
-	boss_root.add_child(bpanel)
-	var bbg := TextureRect.new()
-	bbg.texture = Art.tex("res://assets/ui/bar_bg.png")
-	bbg.position = Vector2(320, 66)
-	bbg.size = Vector2(280, 8)
-	bbg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bbg.stretch_mode = TextureRect.STRETCH_SCALE
+	var bbg := ColorRect.new()
+	bbg.color = Color(0.10, 0.105, 0.11, 0.9)
+	bbg.position = Vector2(220, 48)
+	bbg.size = Vector2(200, 3)
+	bbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	boss_root.add_child(bbg)
-	boss_fill = TextureRect.new()
-	boss_fill.texture = Art.tex("res://assets/ui/bar_health.png")
-	boss_fill.position = Vector2(321, 67)
-	boss_fill.size = Vector2(278, 6)
-	boss_fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	boss_fill.stretch_mode = TextureRect.STRETCH_SCALE
+	boss_fill = ColorRect.new()
+	boss_fill.color = COLOR_HEALTH
+	boss_fill.position = Vector2(220, 48)
+	boss_fill.size = Vector2(198, 3)
+	boss_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	boss_root.add_child(boss_fill)
-	boss_name.move_to_front()
 
 	# --- пауза ---
 	pause_root = Control.new()
@@ -315,17 +283,17 @@ func _build() -> void:
 	pause_root.add_child(dim)
 	var pt := Label.new()
 	pt.text = "ПАУЗА"
-	pt.position = Vector2(0, 110)
+	pt.position = Vector2(0, 104)
 	pt.size = Vector2(640, 30)
 	pt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pt.add_theme_font_size_override("font_size", 24)
-	pt.add_theme_color_override("font_color", Color(0.86, 0.78, 0.6))
+	pt.add_theme_font_size_override("font_size", 22)
+	pt.add_theme_color_override("font_color", COLOR_PARCHMENT)
 	pause_root.add_child(pt)
-	_pause_button("Продолжить", 160, func(): toggle_pause(false))
-	_pause_button("Начать заново", 194, func(): restart_requested.emit())
-	_pause_button("Настройки", 228, _open_settings)
-	_pause_button("В главное меню", 262, func(): menu_requested.emit())
-	_pause_button("Выйти из игры", 296, func(): get_tree().quit())
+	_pause_button("Продолжить", 154, func(): toggle_pause(false))
+	_pause_button("Начать заново", 187, func(): restart_requested.emit())
+	_pause_button("Настройки", 220, _open_settings)
+	_pause_button("В главное меню", 253, func(): menu_requested.emit())
+	_pause_button("Выйти из игры", 286, func(): get_tree().quit())
 
 	# --- смерть ---
 	death_root = Control.new()
@@ -333,22 +301,23 @@ func _build() -> void:
 	death_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(death_root)
 	var ddim := ColorRect.new()
-	ddim.color = Color(0.12, 0.01, 0.03, 0.7)
+	ddim.color = Color(0.035, 0.012, 0.02, 0.82)
 	ddim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	death_root.add_child(ddim)
 	var dt := Label.new()
 	dt.text = "ТЬМА ЗАБРАЛА ТЕБЯ"
-	dt.position = Vector2(0, 130)
+	dt.position = Vector2(0, 126)
 	dt.size = Vector2(640, 30)
 	dt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	dt.add_theme_font_size_override("font_size", 22)
-	dt.add_theme_color_override("font_color", Color(0.8, 0.3, 0.32))
+	dt.add_theme_font_size_override("font_size", 20)
+	dt.add_theme_color_override("font_color", Color(0.78, 0.38, 0.38))
 	death_root.add_child(dt)
 	var db := Button.new()
 	db.text = "Попробовать снова"
-	db.position = Vector2(250, 190)
-	db.size = Vector2(140, 26)
-	db.add_theme_font_size_override("font_size", 13)
+	db.position = Vector2(230, 188)
+	db.size = Vector2(180, 30)
+	db.add_theme_font_size_override("font_size", 11)
+	_style_button(db)
 	db.pressed.connect(func(): restart_requested.emit())
 	death_root.add_child(db)
 
@@ -369,12 +338,30 @@ func _build() -> void:
 func _pause_button(text: String, y: float, action: Callable) -> void:
 	var b := Button.new()
 	b.text = text
-	b.position = Vector2(250, y)
-	b.size = Vector2(140, 26)
-	b.add_theme_font_size_override("font_size", 13)
-	b.flat = true
+	b.position = Vector2(230, y)
+	b.size = Vector2(180, 28)
+	b.add_theme_font_size_override("font_size", 11)
+	_style_button(b)
 	b.pressed.connect(action)
 	pause_root.add_child(b)
+
+
+func _style_button(button: Button) -> void:
+	button.flat = true
+	button.focus_mode = Control.FOCUS_ALL
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.add_theme_color_override("font_color", COLOR_PARCHMENT)
+	button.add_theme_color_override("font_hover_color", Color(0.96, 0.87, 0.68))
+	button.add_theme_color_override("font_focus_color", Color(0.96, 0.87, 0.68))
+	button.add_theme_color_override("font_pressed_color", COLOR_GOLD)
+	button.add_theme_stylebox_override("normal",
+		_choice_style(Color(0.025, 0.03, 0.04, 0.35), Color(0.22, 0.20, 0.16, 0.65)))
+	button.add_theme_stylebox_override("hover",
+		_choice_style(Color(0.09, 0.08, 0.06, 0.72), Color(0.72, 0.55, 0.30, 0.9)))
+	button.add_theme_stylebox_override("focus",
+		_choice_style(Color(0.09, 0.08, 0.06, 0.72), Color(0.72, 0.55, 0.30, 0.9)))
+	button.add_theme_stylebox_override("pressed",
+		_choice_style(Color(0.13, 0.09, 0.045, 0.82), Color(0.86, 0.67, 0.34, 1.0)))
 
 
 ## Инвентарь — отдельный экран в координатах 1280×720, как настройки и развитие:
@@ -456,7 +443,7 @@ func _refresh_progression() -> void:
 	var ratio := 0.0
 	if need > 0:
 		ratio = clampf(float(GameState.xp) / float(need), 0.0, 1.0)
-	xp_fill.size.x = int(92 * ratio)
+	xp_fill.size.x = int(112 * ratio)
 	level_label.text = "УР. %d" % GameState.level
 	var points: int = GameState.stat_points + GameState.skill_points
 	if points > 0:
@@ -464,12 +451,6 @@ func _refresh_progression() -> void:
 			GameState.stat_points, GameState.skill_points]
 	else:
 		points_label.text = ""
-	if r_icon != null:
-		var open: bool = GameState.skill_rank("blood_nova") > 0
-		r_icon.visible = open
-		r_label.visible = open
-
-
 ## Всплывающая надпись: «ОПЫТ +100», «УРОВЕНЬ 2». Живёт в 640×360.
 func toast(text: String, color: Color, y: float, fsize := 11) -> void:
 	var l := _label(text, Vector2(0, y), Vector2(640, 18), fsize, color)
@@ -513,10 +494,12 @@ func _open_development() -> void:
 
 
 func hide_play_hud(hide: bool) -> void:
+	var overlays: Array[Control] = [
+		dialogue_root, choice_root, pause_root, death_root, fade_rect, damage_rect,
+		settings_root, development_root, inventory_root
+	]
 	for c in get_children():
-		if c is Control and c.position.y >= 228.0:
-			if c in [dialogue_root, choice_root, pause_root, death_root, fade_rect]:
-				continue
+		if c is Control and not overlays.has(c):
 			if hide:
 				_hud_vis[c] = c.visible
 				c.visible = false
@@ -543,7 +526,7 @@ func set_hint(text: String) -> void:
 func show_boss(name: String, hp_ratio: float) -> void:
 	boss_root.visible = true
 	boss_name.text = name
-	boss_fill.size.x = int(278 * clampf(hp_ratio, 0.0, 1.0))
+	boss_fill.size.x = int(200 * clampf(hp_ratio, 0.0, 1.0))
 
 
 func hide_boss() -> void:
@@ -564,15 +547,15 @@ func say(entries: Array) -> void:
 		var pname: String = data.get("portrait", "")
 		if pname == "":
 			portrait.visible = false
-			text_label.position = Vector2(52, 290)
-			text_label.size = Vector2(538, 48)
-			speaker_label.position = Vector2(52, 272)
+			text_label.position = Vector2(52, 305)
+			text_label.size = Vector2(538, 36)
+			speaker_label.position = Vector2(52, 287)
 		else:
 			portrait.visible = true
 			portrait.texture = Art.tex("res://assets/ui/portrait_%s.png" % pname)
-			text_label.position = Vector2(120, 290)
-			text_label.size = Vector2(470, 48)
-			speaker_label.position = Vector2(120, 272)
+			text_label.position = Vector2(112, 305)
+			text_label.size = Vector2(470, 36)
+			speaker_label.position = Vector2(112, 287)
 		text_label.text = data.get("text", "")
 		Voice.play_for(String(data.get("text", "")))
 		text_label.visible_characters = 0
@@ -669,8 +652,8 @@ func _choice_style(bg: Color, border: Color) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
 	sb.border_color = border
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(2)
+	sb.border_width_left = 2
+	sb.set_corner_radius_all(0)
 	sb.content_margin_left = 8.0
 	sb.content_margin_right = 8.0
 	sb.content_margin_top = 3.0
@@ -692,10 +675,10 @@ func ask(prompt: String, options: Array) -> int:
 		var i := idx
 		var b := Button.new()
 		b.text = "%d.  %s" % [i + 1, opt]
-		b.add_theme_font_size_override("font_size", 12)
-		b.add_theme_color_override("font_color", Color(0.92, 0.88, 0.78))
-		b.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.62))
-		b.add_theme_color_override("font_focus_color", Color(1.0, 0.9, 0.62))
+		b.add_theme_font_size_override("font_size", 10)
+		b.add_theme_color_override("font_color", COLOR_PARCHMENT)
+		b.add_theme_color_override("font_hover_color", Color(0.96, 0.87, 0.68))
+		b.add_theme_color_override("font_focus_color", Color(0.96, 0.87, 0.68))
 		b.custom_minimum_size = Vector2(280, 26)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.focus_mode = Control.FOCUS_ALL

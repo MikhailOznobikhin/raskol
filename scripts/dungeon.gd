@@ -4,11 +4,19 @@ extends Node3D
 class_name Dungeon
 
 const T := 2.0
-const WALL_H := 4.2
-## Свод поднимается над залами ступенями: узкий проход остаётся низким, зал
-## получает объём. Без этого весь уровень — коробка высотой 4,2 м.
-const CEIL_RISE := 0.62
+## Высота стен: гребень свода модуля стены набора Medieval Underground Dungeon
+## (4,844 м). Потолок ложится точно на эту плоскость, и на стыке нет щели.
+const WALL_H := 4.844
+## Набор PBR-модулей: стены, арки, пол, факелы. Собран src/build_dungeon_kit.py.
+const KIT := "res://assets/models/dungeon_kit/dungeon_kit.glb"
+## Какие грани обнажены — по одной клетке на направление.
+const SIDES := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+## Проход арки набора: полуширина проёма и толщина косяка (метры).
+const ARCH_HALF := 0.72
+const ARCH_JAMB := 0.28
+## Выше этой высоты проём арочного модуля перекрыт кладкой.
+const ARCH_TOP := 3.0
 
 var lines: Array = []
 var map_w := 0
@@ -16,10 +24,8 @@ var map_h := 0
 var grid: Array = []
 ## dist[y][x] — клеток до ближайшей стены (у стены 0).
 var dist: Array = []
-## rdist[y][x] — то же, но по осям X/Y по отдельности: границы ступеней свода
-## идут параллельно стенам, а не ромбом.
-var rdist: Array = []
-## ceil_h[y][x] — нижняя грань потолка над открытой клеткой.
+## ceil_h[y][x] — нижняя грань потолка над открытой клеткой: плоскость гребня
+## свода модуля стены.
 var ceil_h: Array = []
 ## wtop[y][x] — верх стенового блока: должен доставать до свода соседних залов.
 var wtop: Array = []
@@ -27,6 +33,8 @@ var wtop: Array = []
 var pier: Array = []
 ## Кластеры таких блоков: центр, полуразмеры, верх.
 var piers: Array = []
+## Поставленные арки: клетка и нормаль её лицевой грани.
+var arches: Array = []
 
 var mat_floor: ShaderMaterial
 var mat_wall: ShaderMaterial
@@ -49,6 +57,11 @@ var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
 ## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
 var _grime_cache := {}
+## Модули набора: имя → Mesh, и материалы glTF (albedo+normal+roughness).
+var kit: Dictionary = {}
+var kit_ok := false
+## Материал заплаток земли с приглушённым альбедо (см. _dirt_material).
+var _mat_dirt: Material = null
 
 
 func _ready() -> void:
@@ -56,13 +69,14 @@ func _ready() -> void:
 
 
 func build() -> void:
+	_load_kit()
 	_materials()
 	_load_map()
 	_shapes()
 	_build_floor()
 	_build_walls()
+	_build_arches()
 	_build_ceiling()
-	_build_ribs()
 	_build_piers()
 	_build_collision()
 	_build_props()
@@ -70,6 +84,69 @@ func build() -> void:
 	_scatter_torches()
 	_build_environment()
 	_add_atmosphere()
+
+
+## Загрузка набора модулей. Модули уже стоят в своих системах координат
+## (лицо стены на z=0, зал при z<0), поэтому в генераторе они ставятся
+## обычным Transform3D без доводки геометрии на ходу.
+func _load_kit() -> void:
+	if not ResourceLoader.exists(KIT):
+		push_warning("НЕТ набора dungeon_kit — подземелье соберётся из простых плит")
+		return
+	var packed: PackedScene = load(KIT)
+	if packed == null:
+		push_warning("набор dungeon_kit не загрузился")
+		return
+	var scene: Node = packed.instantiate()
+	var stack: Array[Node] = [scene]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			kit[n.name] = (n as MeshInstance3D).mesh
+		for c in n.get_children():
+			stack.append(c)
+	scene.free()
+	kit_ok = kit.has("wall_4m") and kit.has("wall_2m") and kit.has("floor_4m")
+	if not kit_ok:
+		push_warning("в наборе dungeon_kit нет нужных модулей")
+
+
+
+## Базис грани стены: X — вдоль стены, Z — из зала в толщу стены.
+## Разворачивать модуль на 180° для разнообразия кладки нельзя: свод уходит
+## внутрь стены и в кадре зияет чёрный фон. Для этого в наборе есть
+## зеркальные варианты мешей (_b).
+func _face_basis(d: Vector2i) -> Basis:
+	var x := Vector3(-d.y, 0.0, d.x)
+	var z := Vector3(-d.x, 0.0, -d.y)
+	return Basis(x, Vector3.UP, z)
+
+
+## Меш модуля: mirrored берёт зеркальный вариант того же модуля.
+func _kit_mesh(mesh_name: String, mirrored: bool) -> Mesh:
+	if mirrored and kit.has(mesh_name + "_b"):
+		return kit[mesh_name + "_b"]
+	return kit.get(mesh_name)
+
+
+func _kit_place(mesh_name: String, xform: Transform3D, shadows := true,
+		mirrored := false) -> MeshInstance3D:
+	var m: Mesh = _kit_mesh(mesh_name, mirrored)
+	if m == null:
+		return null
+	var mi := MeshInstance3D.new()
+	mi.mesh = m
+	mi.transform = xform
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	return mi
+
+
+## Детерминированный «шум» на клетку: без него модули читаются копипастой.
+func _cell_hash(x: int, y: int, salt: int = 0) -> int:
+	var h: int = (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791)
+	return absi(h >> 3)
 
 
 func _tex(name: String) -> Texture2D:
@@ -129,8 +206,10 @@ func _materials() -> void:
 	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.4, 1.5)
 	# Свод не должен спорить с полом: копчёный холодный камень уходит в тень,
 	# а тёплый свет остаётся на стенах и реквизите.
-	mat_ceil = _make_stone("stone_wall", Color(0.55, 0.53, 0.52), 0.98, 0.55, 0.9)
-	mat_cap = _make_stone("stone_wall", Color(0.95, 0.88, 0.76), 0.75, 0.9, 1.1)
+	mat_ceil = _make_stone("stone_wall", Color(0.34, 0.29, 0.25), 1.0, 1.5, 0.9)
+	# Тёсаный камень ступеней и порталов. Прежний почти белый тинт в кадре
+	# читался светящимся пластиком рядом с кладкой набора.
+	mat_cap = _make_stone("stone_wall", Color(0.66, 0.6, 0.54), 0.85, 0.9, 1.1)
 	mat_metal = _make_mat("metal", Color(0.8, 0.82, 0.9), 0.45, 0.85, 1.2)
 	mat_wood = _make_mat("wood", Color(0.9, 0.85, 0.8), 0.8, 0.0, 1.0)
 	mat_dark = StandardMaterial3D.new()
@@ -207,16 +286,6 @@ func cell_ceil(tx: int, ty: int) -> float:
 	return ceil_h[ty][tx]
 
 
-## Верх стенового блока над клеткой — нужен, чтобы камень кладки доставал
-## до свода зала, а не до условных 4,2 м.
-func wall_top(tx: int, ty: int) -> float:
-	if tx < 0 or ty < 0 or tx >= map_w or ty >= map_h:
-		return WALL_H
-	if not grid[ty][tx]:
-		return WALL_H
-	return wtop[ty][tx]
-
-
 func _in(tx: int, ty: int) -> bool:
 	return tx >= 0 and ty >= 0 and tx < map_w and ty < map_h
 
@@ -248,51 +317,14 @@ func _shapes() -> void:
 				continue
 			dist[n.y][n.x] = next_d
 			q.append(n)
-	# Прямоугольное вложение клетки в помещение: сколько клеток до ближайшей
-	# стены по X и по Y по отдельности. Ромб из поля расстояний поднимал свод
-	# ступенями по диагонали, и потолок над залом выглядел как обвал; здесь
-	# границы уровней идут параллельно стенам, как у кессонного перекрытия.
-	rdist = []
-	for y in map_h:
-		var row: Array = []
-		for x in map_w:
-			if grid[y][x]:
-				row.append(0)
-				continue
-			var near := map_w + map_h
-			var k := x - 1
-			while k >= 0 and not grid[y][k]:
-				k -= 1
-			near = mini(near, x - k)
-			k = x + 1
-			while k < map_w and not grid[y][k]:
-				k += 1
-			near = mini(near, k - x)
-			k = y - 1
-			while k >= 0 and not grid[k][x]:
-				k -= 1
-			near = mini(near, y - k)
-			k = y + 1
-			while k < map_h and not grid[k][x]:
-				k += 1
-			near = mini(near, k - y)
-			row.append(near)
-		rdist.append(row)
+	# Потолок — плоскость гребня свода модуля стены. Ступенчатые подъёмы свода
+	# над залами убраны: китовый модуль несёт свой свод с гребнем на 4,844 м,
+	# и поднятый потолок отрывался от верха стены, открывая чёрный фон.
 	ceil_h = []
 	for y in map_h:
 		var row: Array = []
 		for x in map_w:
-			var dd: int = int(rdist[y][x])
-			# Ступени широкие, по две клетки. Лестница из шести уровней по
-			# 0,42 м с ромбовидными границами сверху выглядела как обвал.
-			var rise: float = 0.0
-			if dd == 2:
-				rise = CEIL_RISE
-			elif dd <= 4:
-				rise = CEIL_RISE * 2.0
-			elif dd >= 5:
-				rise = CEIL_RISE * 3.0
-			row.append(WALL_H + rise)
+			row.append(WALL_H)
 		ceil_h.append(row)
 	wtop = []
 	pier = []
@@ -392,84 +424,106 @@ func _open_cells() -> Array[Vector2i]:
 	return out
 
 
-## Мостовая: раствор под плитами неровной резки. Одинаковая сетка 2×2
-## сверху и снизу — то, что выдаёт «комнату из кубов».
+## Пол из плит набора: модуль 4×4 м ложится ровно на блок 2×2 клетки, поэтому
+## швов между блоками нет, а плита заходит под кладку стен и щелей не оставляет.
 func _build_floor() -> void:
+	if not kit_ok:
+		_build_floor_plain()
+		return
+	var laid := 0
+	for by in range(0, map_h, 2):
+		for bx in range(0, map_w, 2):
+			if not _block_has_floor(bx, by):
+				continue
+			var yaw: float = float(_cell_hash(bx, by, 5) % 4) * PI * 0.5
+			_kit_place("floor_4m", Transform3D(Basis(Vector3.UP, yaw),
+				Vector3((bx + 1) * T, 0.0, (by + 1) * T)), false)
+			laid += 1
+	print("FLOOR kit tiles=", laid)
+	_scatter_dirt()
+
+
+## Нужен ли блоку 2×2 пол: в нём есть проходимая клетка, клетка со столбом
+## или стена, обшитая модулями набора. У модуля стены нет собственного пола:
+## свод сходится с основанием кладки только на 1,6 м в глубину клетки, и без
+## плиты вдоль основания стены остаётся чёрная щель (в диагностических
+## кадрах — чёрная полоса у плинтуса).
+func _block_has_floor(bx: int, by: int) -> bool:
+	for dy in 2:
+		for dx in 2:
+			var x := bx + dx
+			var y := by + dy
+			if not _in(x, y):
+				continue
+			if not grid[y][x] or pier[y][x]:
+				return true
+			for d in SIDES:
+				if _exposed(x, y, d):
+					return true
+	return false
+
+
+## Материал заплатки земли: родной «песок» набора светлее каменного пола и в
+## тёмном зале читается белым листом бумаги. Глушим альбедо до сырой земли,
+## карты набора (normal и metallic-roughness) остаются родными.
+func _dirt_material() -> Material:
+	if _mat_dirt != null:
+		return _mat_dirt
+	var mesh: Mesh = _kit_mesh("dirt", false)
+	if mesh == null or mesh.get_surface_count() == 0:
+		return null
+	var src: Material = mesh.surface_get_material(0)
+	if src is StandardMaterial3D:
+		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
+		m.albedo_color = Color(0.34, 0.3, 0.26)
+		_mat_dirt = m
+	else:
+		_mat_dirt = src
+	return _mat_dirt
+
+
+## Заплатки земли из набора: сбивают регулярность плит, ставятся по одной
+## на далёкий от стен блок.
+func _scatter_dirt() -> void:
+	if not kit.has("dirt"):
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9917
+	var placed := 0
+	for by in range(2, map_h - 3, 2):
+		for bx in range(2, map_w - 3, 2):
+			if placed >= 14:
+				break
+			var c := Vector2i(bx, by)
+			if not _is_open_cell(c) or int(dist[by][bx]) < 3:
+				continue
+			if rng.randf() > 0.12:
+				continue
+			var yaw: float = rng.randf() * TAU
+			var mi := _kit_place("dirt", Transform3D(Basis(Vector3.UP, yaw),
+				Vector3((bx + 1) * T, 0.012, (by + 1) * T)), false)
+			if mi != null:
+				mi.material_override = _dirt_material()
+				placed += 1
+	print("FLOOR dirt patches=", placed)
+
+
+## Аварийная мостовая, если набор не загрузился: уровень должен оставаться
+## проходимым, а не превращаться в пустоту.
+func _build_floor_plain() -> void:
 	var cells := _open_cells()
-	# под столбами-пилястрами тоже нужен пол: барабан уже клетки, и без плиты
-	# вокруг основания зияет двухметровая чёрная дыра
 	for y in map_h:
 		for x in map_w:
 			if grid[y][x] and pier[y][x]:
 				cells.append(Vector2i(x, y))
-	var grout: ShaderMaterial = mat_floor.duplicate() as ShaderMaterial
-	grout.set_shader_parameter("tint", Color(0.52, 0.51, 0.55))
 	var base := BoxMesh.new()
 	base.size = Vector3(T, 0.3, T)
-	var bmi := _multimesh(base, cells.size(), grout, false)
+	var bmi := _multimesh(base, cells.size(), mat_floor, false)
 	for i in cells.size():
 		var c := cells[i]
-		# раствор почти вровень с плитами: глубокая щель читается не как шов,
-		# а как провал в полу
 		bmi.multimesh.set_instance_transform(i,
-			Transform3D(Basis(), Vector3((c.x + 0.5) * T, -0.16, (c.y + 0.5) * T)))
+			Transform3D(Basis(), Vector3((c.x + 0.5) * T, -0.15, (c.y + 0.5) * T)))
 		bmi.multimesh.set_instance_color(i, Color(0.9, 0.92, 1.0))
-
-	var plates: Array = []
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 4242
-	for cl in cells:
-		var rects: Array = []
-		_split(Rect2(Vector2(0.012, 0.012), Vector2(T - 0.024, T - 0.024)), 2, rng, rects)
-		for r in rects:
-			var rc: Rect2 = r
-			if rc.size.x < 0.24 or rc.size.y < 0.24:
-				continue
-			plates.append({
-				"pos": Vector3(cl.x * T + rc.position.x + rc.size.x * 0.5, 0.0,
-					cl.y * T + rc.position.y + rc.size.y * 0.5),
-				"w": rc.size.x - 0.018,
-				"d": rc.size.y - 0.018,
-				"th": rng.randf_range(0.14, 0.2),
-				"top": rng.randf_range(-0.008, 0.02),
-				"spin": rng.randf_range(-1.2, 1.2),
-				"tilt": rng.randf_range(-0.7, 0.7),
-				"tone": rng.randf_range(-0.05, 0.05),
-			})
-	var box := BoxMesh.new()
-	box.size = Vector3(1, 1, 1)
-	var pmi := _multimesh(box, plates.size(), mat_floor, false)
-	for i in plates.size():
-		var p: Dictionary = plates[i]
-		var b := Basis(Vector3.UP, deg_to_rad(float(p["spin"])))
-		b = Basis(Vector3.RIGHT, deg_to_rad(float(p["tilt"]))) * b
-		pmi.multimesh.set_instance_transform(i, Transform3D(
-			b.scaled(Vector3(float(p["w"]), float(p["th"]), float(p["d"]))),
-			Vector3(p["pos"].x, float(p["top"]) - float(p["th"]) * 0.5, p["pos"].z)))
-		var t: float = p["tone"]
-		pmi.multimesh.set_instance_color(i, Color(0.9 + t, 0.9 - t * 0.5, 0.93 - t))
-
-
-## Рекурсивно дробит прямоугольник клетки на плиты разрезкой, поэтому
-## плиты не перекрываются и между ними остаются швы-щели.
-func _split(rect: Rect2, depth: int, rng: RandomNumberGenerator, out: Array) -> void:
-	if depth <= 0 or (rect.size.x < 1.05 and rect.size.y < 1.05):
-		out.append(rect)
-		return
-	var f: float = rng.randf_range(0.36, 0.64)
-	# шов между плитами одного кольца — 2,5 см: wider шов читается не как
-	# цементная линия, а как чёрная дыра в полу
-	var cut: float = 0.025
-	if rect.size.y > rect.size.x:
-		var h: float = rect.size.y * f
-		_split(Rect2(rect.position, Vector2(rect.size.x, h - cut)), depth - 1, rng, out)
-		_split(Rect2(rect.position + Vector2(0, h),
-			Vector2(rect.size.x, rect.size.y - h - cut)), depth - 1, rng, out)
-	else:
-		var w: float = rect.size.x * f
-		_split(Rect2(rect.position, Vector2(w - cut, rect.size.y)), depth - 1, rng, out)
-		_split(Rect2(rect.position + Vector2(w, 0),
-			Vector2(rect.size.x - w - cut, rect.size.y)), depth - 1, rng, out)
 
 
 func _ceil_cell_height(tx: int, ty: int) -> float:
@@ -526,8 +580,8 @@ func _build_ceiling() -> void:
 	var count := 0
 	for y in map_h:
 		for x in map_w:
-			if grid[y][x] and not pier[y][x]:
-				continue
+			# потолок кладётся и над клетками стен: свод модуля стены поднимается
+			# до плоскости потолка, и без заплаты над стеной в зал смотрит пустота
 			var ids: Array[int] = []
 			var corners: Array[Vector2i] = [
 				Vector2i(x, y), Vector2i(x + 1, y),
@@ -559,7 +613,71 @@ func _build_ceiling() -> void:
 	add_child(mi)
 
 
+## Обнажена ли грань клетки-стены наружу — в том числе у столба.
+func _exposed(x: int, y: int, d: Vector2i) -> bool:
+	if not _in(x, y) or not grid[y][x] or pier[y][x]:
+		return false
+	return _open_in(x, y, d)
+
+
+## Соседняя клетка по направлению d не занята камнем.
+func _open_in(x: int, y: int, d: Vector2i) -> bool:
+	var nx := x + d.x
+	var ny := y + d.y
+	return _in(nx, ny) and not grid[ny][nx]
+
+
+## Есть ли у открытой клетки стена с указанной стороны.
+func _wall_at(open_cell: Vector2i, d: Vector2i) -> bool:
+	return _exposed(open_cell.x + d.x, open_cell.y + d.y, Vector2i(-d.x, -d.y))
+
+
+## Преобразование модуля на грань: origin — середина грани на полу, Z смотрит
+## из зала в толщу стены.
+func _face_xform(pair: Array, d: Vector2i) -> Transform3D:
+	var out := Vector3(d.x, 0.0, d.y)
+	var mid := Vector3.ZERO
+	for c0 in pair:
+		var c: Vector2i = c0
+		mid += cell_center(c.x, c.y) + out * (T * 0.5)
+	return Transform3D(_face_basis(d), mid / float(pair.size()))
+
+
+## Стены из кладки набора: на каждую обнажённую грань — модуль 4 м (две
+## клетки) или 2 м (одна). Лицо кладки ложится точно на плоскость грани
+## клетки по сетке m1.txt, поэтому щелей и разрывов между модулями нет.
 func _build_walls() -> void:
+	if not kit_ok:
+		_build_walls_plain()
+		return
+	var four := 0
+	var two := 0
+	for d in SIDES:
+		var t := Vector2i(-d.y, d.x)
+		var used := {}
+		for y in map_h:
+			for x in map_w:
+				var c := Vector2i(x, y)
+				if used.has(c) or not _exposed(x, y, d):
+					continue
+				var pair: Array = [c]
+				var n := c + t
+				if _in(n.x, n.y) and not used.has(n) and _exposed(n.x, n.y, d):
+					pair.append(n)
+				var flip: bool = _cell_hash(x, y, 11) % 2 == 0
+				_kit_place("wall_4m" if pair.size() == 2 else "wall_2m",
+					_face_xform(pair, d), true, flip)
+				if pair.size() == 2:
+					four += 1
+				else:
+					two += 1
+				for cc in pair:
+					used[cc] = true
+	print("WALLS kit 4m=", four, " 2m=", two)
+
+
+## Аварийные стены, если набор не загрузился.
+func _build_walls_plain() -> void:
 	var cells: Array[Vector2i] = []
 	for y in map_h:
 		for x in map_w:
@@ -568,155 +686,71 @@ func _build_walls() -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(T, 1.0, T)
 	var mmi := _multimesh(box, cells.size(), mat_wall)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 77
 	for i in cells.size():
 		var c := cells[i]
 		var h: float = wtop[c.y][c.x]
 		mmi.multimesh.set_instance_transform(i, Transform3D(
 			Basis().scaled(Vector3(1.0, h, 1.0)),
 			Vector3((c.x + 0.5) * T, h * 0.5, (c.y + 0.5) * T)))
-		# тон почти одинаковый у соседних клеток: 22% разброса рисовали по
-		# стене шахматную сетку из двухметровых клеток — главный признак «куба»
-		var shade: float = 1.0 - rng.randf() * 0.05
-		var jitter: float = rng.randf_range(-0.012, 0.012)
-		mmi.multimesh.set_instance_color(i,
-			Color(0.86 * shade + jitter, 0.87 * shade, 0.92 * shade - jitter))
+		mmi.multimesh.set_instance_color(i, Color(0.86, 0.87, 0.92))
 
 
-## Каменные арки поперёк узких проходов: низкий плоский потолок — вторая
-## половина «квадратности».
-func _build_ribs() -> void:
-	var parts: Array = []
-	for y in map_h:
-		for x in map_w:
-			if grid[y][x] or int(dist[y][x]) != 1:
-				continue
-			if (x * 5 + y * 3) % 4 != 0:
-				continue
-			var ns: bool = is_wall(x, y - 1) and is_wall(x, y + 1)
-			var ew: bool = is_wall(x - 1, y) and is_wall(x + 1, y)
-			if not ns and not ew:
-				continue
-			var span: Vector3 = Vector3(0, 0, 1) if ns else Vector3(1, 0, 0)
-			var h: float = ceil_h[y][x]
-			var c := Vector3((x + 0.5) * T, h - 0.66, (y + 0.5) * T)
-			var th: Vector3 = span.cross(Vector3.UP)
-			# 16 сегментов вместо девяти: на девяти хорда по 0,8 м, а тело
-			# ребра — 0,38 м, и арка разваливалась на лестницу из планок.
-			for i in 17:
-				var a: float = lerp(0.0, PI, i / 16.0)
-				var rad := span * cos(a) + Vector3.UP * sin(a)
-				var zz: Vector3 = th.cross(rad)
-				parts.append(Transform3D(Basis(th, rad, zz).scaled(
-					Vector3(0.3, 0.22, 0.34)),
-					c + span * (cos(a) * T * 0.5) + Vector3.UP * (sin(a) * 0.62)))
-	if parts.is_empty():
+## Проёмы: клетка-разрыв в стене — это готовый модуль набора с арочным
+## проходом. Он закрывает разрыв по сетке и ставит настоящую кладёную арку
+## вместо прежних процедурных рёбер из коробок.
+func _build_arches() -> void:
+	arches.clear()
+	if not kit.has("arch_2m"):
 		return
-	var box := BoxMesh.new()
-	box.size = Vector3(1, 1, 1)
-	var mmi := _multimesh(box, parts.size(), mat_cap)
-	for i in parts.size():
-		mmi.multimesh.set_instance_transform(i, parts[i])
-		# цвет у ребра один на всю арку: разброс по сегментам превращал
-		# гладкую тягу в пёструю лесенку
-		var k := i / 17
-		var v: float = float((k * 7919) % 100) / 100.0
-		mmi.multimesh.set_instance_color(i,
-			Color(0.9, 0.87, 0.82).darkened(v * 0.16))
+	for y in range(1, map_h - 1):
+		for x in range(1, map_w - 1):
+			if grid[y][x]:
+				continue
+			var wall_x: bool = is_wall(x - 1, y) and is_wall(x + 1, y)
+			var wall_z: bool = is_wall(x, y - 1) and is_wall(x, y + 1)
+			var open_x: bool = not is_wall(x - 1, y) and not is_wall(x + 1, y)
+			var open_z: bool = not is_wall(x, y - 1) and not is_wall(x, y + 1)
+			var d := Vector2i.ZERO
+			if wall_x and open_z:
+				d = Vector2i(0, -1)   # стена идёт по X, проход по Z
+			elif wall_z and open_x:
+				d = Vector2i(-1, 0)   # стена идёт по Z, проход по X
+			if d == Vector2i.ZERO:
+				continue
+			var c := Vector2i(x, y)
+			var flip: bool = _cell_hash(x, y, 29) % 2 == 0
+			_kit_place("arch_2m", _face_xform([c], d), true, flip)
+			arches.append({"cell": c, "d": d})
+	print("ARCHES kit=", arches.size())
 
 
-## Отдельная опора в зале: восьмигранный столб из колон с базой и капителью.
-## Полуразмеры не превышают прежнюю клетку-коробку, поэтому столб не торчит
-## там, где раньше можно было пройти.
+## Отдельная опора: клетка-столб обшивается модулями 2 м по каждой
+## обнажённой грани. В зале стоит кладёный столб 2×2 со сводом у верха —
+## гранёные барабаны и капители больше не нужны.
 func _build_piers() -> void:
+	var faces := 0
+	if kit_ok:
+		for y in map_h:
+			for x in map_w:
+				if not grid[y][x] or not pier[y][x]:
+					continue
+				for d in SIDES:
+					if not _open_in(x, y, d):
+						continue
+					_kit_place("wall_2m", _face_xform([Vector2i(x, y)], d), true,
+						_cell_hash(x, y, 17) % 2 == 0)
+					faces += 1
+	if faces == 0:
+		_build_piers_plain()
+	print("PIERS kit faces=", faces, " clusters=", piers.size())
+
+
+## Аварийные столбы простыми блоками.
+func _build_piers_plain() -> void:
 	for p0 in piers:
 		var p: Dictionary = p0
-		var rx: float = p["rx"]
-		var rz: float = p["rz"]
-		var top: float = p["top"]
-		var root := Node3D.new()
-		root.position = p["pos"]
-		add_child(root)
-		var rng := RandomNumberGenerator.new()
-		rng.seed = int(p["pos"].x * 31.0) * 7919 + int(p["pos"].z * 31.0) * 104729
-		var sc := Vector3(rx * 0.99, 1.0, rz * 0.99)
-		# база и капитель выступают максимум на 22 см: иначе игрок проходит
-		# сквозь камень
-		var bs := Vector3(minf(rx * 1.22, rx + 0.22), 1.0, minf(rz * 1.22, rz + 0.22))
-		var cs := Vector3(minf(rx * 1.18, rx + 0.18), 1.0, minf(rz * 1.18, rz + 0.18))
-		var plinth := MeshInstance3D.new()
-		plinth.mesh = _prism(1.0, 0.34)
-		plinth.material_override = mat_cap
-		plinth.scale = bs
-		plinth.position = Vector3(0, 0.17, 0)
-		root.add_child(plinth)
-		var base := MeshInstance3D.new()
-		base.mesh = _prism(1.0, 0.22)
-		base.material_override = mat_cap
-		base.scale = bs * 0.92
-		base.position = Vector3(0, 0.45, 0)
-		root.add_child(base)
-		var y := 0.56
-		var drums: Array = []
-		while y < top - 0.7:
-			var h: float = minf(rng.randf_range(0.95, 1.5), top - 0.7 - y)
-			if h < 0.35:
-				break
-			drums.append({"y": y + h * 0.5, "h": h, "s": rng.randf_range(-9.0, 9.0),
-				"w": rng.randf_range(0.95, 1.0), "c": rng.randf()})
-			y += h + 0.03
-		# гранёный барабан можно довернуть только круглой опоре: прямоугольник
-		# при повороте вылезает за пределы своего пятна
-		var round_pier: bool = absf(rx - rz) < 0.05
-		for d0 in drums:
-			var d: Dictionary = d0
-			var mi := MeshInstance3D.new()
-			mi.mesh = _prism(1.0, float(d["h"]))
-			var m: ShaderMaterial = mat_wall.duplicate() as ShaderMaterial
-			var v: float = d["c"]
-			m.set_shader_parameter("tint",
-				Color(0.7 + v * 0.24, 0.68 + v * 0.22, 0.66 + v * 0.2))
-			mi.material_override = m
-			mi.scale = sc * float(d["w"])
-			mi.position = Vector3(0, float(d["y"]), 0)
-			mi.rotation_degrees = Vector3(0, 22.5 + (float(d["s"]) if round_pier else 0.0), 0)
-			root.add_child(mi)
-		# капитель: шайба и абака, упирающаяся в свод. Верх абаки совпадает с
-		# верхом стены, иначе между колонной и плитой потолка остаётся щель.
-		var ring := MeshInstance3D.new()
-		ring.mesh = _prism(1.0, 0.2)
-		ring.material_override = mat_cap
-		ring.scale = cs
-		ring.position = Vector3(0, top - 0.4, 0)
-		root.add_child(ring)
-		var abacus := MeshInstance3D.new()
-		abacus.mesh = _prism(1.0, 0.3)
-		abacus.material_override = mat_cap
-		abacus.scale = cs * 1.12
-		abacus.position = Vector3(0, top - 0.15, 0)
-		root.add_child(abacus)
-
-
-func _prism(r: float, h: float) -> CylinderMesh:
-	var c := CylinderMesh.new()
-	c.top_radius = r
-	c.bottom_radius = r
-	c.height = maxf(h, 0.05)
-	c.radial_segments = 8
-	c.rings = 1
-	return c
-
-
-## Восьмигранный профиль опоры — ровно те же точки, что и у визуального
-## столба, чтобы не было невидимых углов.
-func _octagon_points(rx: float, rz: float, top: float) -> PackedVector3Array:
-	var out := PackedVector3Array()
-	for k in 8:
-		var a: float = deg_to_rad(45.0 * k + 22.5)
-		out.append(Vector3(cos(a) * rx, 0.0, sin(a) * rz))
-		out.append(Vector3(cos(a) * rx, top, sin(a) * rz))
-	return out
+		_box(Vector3(float(p["rx"]) * 1.8, WALL_H, float(p["rz"]) * 1.8),
+			Vector3(p["pos"].x, WALL_H * 0.5, p["pos"].z), mat_wall)
 
 
 func _build_collision() -> void:
@@ -747,25 +781,41 @@ func _build_collision() -> void:
 				body.add_child(col)
 			else:
 				x += 1
-	# опоры: горизонтальный срез — восьмигранная призма, как и сама колонна
-	for p0 in piers:
-		var p: Dictionary = p0
-		var rx: float = p["rx"]
-		var rz: float = p["rz"]
-		var origin: Vector3 = p["pos"]
-		var plinth_shape := ConvexPolygonShape3D.new()
-		plinth_shape.points = _octagon_points(
-			minf(rx * 1.22, rx + 0.22), minf(rz * 1.22, rz + 0.22), 0.76)
-		var pc := CollisionShape3D.new()
-		pc.shape = plinth_shape
-		pc.position = origin
-		body.add_child(pc)
-		var shaft_shape := ConvexPolygonShape3D.new()
-		shaft_shape.points = _octagon_points(rx * 0.99, rz * 0.99, WALL_H)
-		var sc := CollisionShape3D.new()
-		sc.shape = shaft_shape
-		sc.position = origin
-		body.add_child(sc)
+	# столбы: квадрат в размер клетки — ровно то, что видно как кладёный столб
+	for y in map_h:
+		for x in map_w:
+			if grid[y][x] and pier[y][x]:
+				_box_collision(body, Vector3(T, WALL_H, T),
+					Vector3((x + 0.5) * T, WALL_H * 0.5, (y + 0.5) * T))
+	# косяки и переклад арок: без них игрок проходит сквозь камень арки
+	for a0 in arches:
+		var a: Dictionary = a0
+		var c: Vector2i = a["cell"]
+		var d: Vector2i = a["d"]
+		var center := cell_center(c.x, c.y)
+		# ось кладки арки — вдоль стены, то есть поперёк нормали d
+		var along := Vector3(-d.y, 0.0, d.x)
+		var nx := absf(along.x)
+		var nz := absf(along.z)
+		for s in [-1.0, 1.0]:
+			var off: Vector3 = along * (ARCH_HALF + ARCH_JAMB * 0.5) * s
+			_box_collision(body, Vector3(
+				nx * ARCH_JAMB + (1.0 - nx) * T, WALL_H,
+				nz * ARCH_JAMB + (1.0 - nz) * T),
+				Vector3(center.x + off.x, WALL_H * 0.5, center.z + off.z))
+		_box_collision(body, Vector3(
+			nx * ARCH_HALF * 2.0 + (1.0 - nx) * T, WALL_H - ARCH_TOP,
+			nz * ARCH_HALF * 2.0 + (1.0 - nz) * T),
+			Vector3(center.x, (WALL_H + ARCH_TOP) * 0.5, center.z))
+
+
+func _box_collision(body: StaticBody3D, size: Vector3, pos: Vector3) -> void:
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.position = pos
+	body.add_child(col)
 
 
 ## Уже есть свет в этом радиусе — новый факел не нужен.
@@ -784,11 +834,11 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.015, 0.018, 0.025)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	# Увеличим ambient light, чтобы дальние комнаты не были чёрными
-	env.ambient_light_color = Color(0.44, 0.43, 0.47)
-	# Этап A: меньше «серого молока», больше роли у факелов и контрового света.
-	env.ambient_light_energy = 1.0
-	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	# Тёплый слабый ambient: тёмные теплённые тени, факелы ведут кадр
+	env.ambient_light_color = Color(0.1, 0.08, 0.07)
+	env.ambient_light_energy = 0.3
+	# ACES — кинематографичный тон-маппинг, как в меню игры.
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 1.5
 	env.glow_enabled = true
 	env.glow_intensity = 0.34
@@ -800,20 +850,21 @@ func _build_environment() -> void:
 	env.fog_density = 0.009
 	env.ssao_enabled = true
 	# Контактные тени в стыках кладки: без них камень выглядит пластиком.
-	env.ssao_radius = 0.9
-	env.ssao_intensity = 1.0
+	env.ssao_radius = 1.2
+	env.ssao_intensity = 2.0
 	# SSIL добивает свет в углах и на нижних гранях свода, где ambient слаб.
 	env.ssil_enabled = true
 	env.ssil_radius = 2.0
 	env.ssil_intensity = 1.2
 	env.ssil_sharpness = 0.98
-	# объёмный туман даёт световые конусы от факелов; плотность низкая,
-	# чтобы не съедать fps на ноутбучной видеокарте
+	# объёмный туман даёт световые конусы от факелов. Плотность 0.02 у мыши
+	# факела героя выбеливала полкадра и прятала кладку набора: свели к 0.01.
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.013
-	env.volumetric_fog_albedo = Color(0.62, 0.66, 0.78)
+	env.volumetric_fog_density = 0.01
+	# Тёплый туман подхватывает цвет ambient и свет факелов
+	env.volumetric_fog_albedo = Color(0.12, 0.1, 0.08)
 	env.volumetric_fog_emission_energy = 0.0
-	env.volumetric_fog_anisotropy = 0.6
+	env.volumetric_fog_anisotropy = 0.45
 	env.volumetric_fog_length = 40.0
 	env.adjustment_enabled = true
 	env.adjustment_brightness = 1.08
@@ -1442,7 +1493,9 @@ func _prop(type: String, pos: Vector3) -> void:
 			# комнату и съедает теневой бюджет.
 			if _light_near(pos, 3.2):
 				return
-			_torch(pos)
+			# у стены — настенный факел из набора, в зале без стены — напольный
+			if not _wall_torch_near(pos):
+				_torch(pos)
 		"brazier", "forge_fire":
 			_brazier_prop(pos)
 		"barrel":
@@ -1636,8 +1689,70 @@ func _process(delta: float) -> void:
 			ranked[i]["l"].shadow_enabled = i < 4 and ranked[i]["d"] < 15.0
 
 
+## Настенный факел набора: крепление в плоскости стены, рожок в зал.
+## Свет тот же, что у напольного: без него коридоры остаются чёрными.
+func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
+	if not kit.has("torch"):
+		return false
+	var xf := _face_xform([open_cell], d)
+	var root := Node3D.new()
+	root.transform = Transform3D(xf.basis, xf.origin + Vector3(0.0, 2.05, 0.0))
+	add_child(root)
+	var mi := MeshInstance3D.new()
+	mi.mesh = kit["torch"]
+	root.add_child(mi)
+	# ореол пламени: в модуле огонь только в текстуре, живой язычок — квад-биллборд
+	var halo := MeshInstance3D.new()
+	var hq := QuadMesh.new()
+	hq.size = Vector2(0.8, 0.8)
+	halo.mesh = hq
+	var hm := StandardMaterial3D.new()
+	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	hm.albedo_color = Color(1.0, 0.5, 0.16, 0.5)
+	hm.albedo_texture = _radial_glow_texture()
+	halo.material_override = hm
+	halo.position = Vector3(0.0, 1.2, -0.2)
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(halo)
+	flames.append(halo)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.62, 0.28)
+	light.light_energy = 5.0
+	light.omni_range = 11.0
+	light.omni_attenuation = 1.0
+	light.shadow_enabled = shadows
+	light.position = Vector3(0.0, 1.4, -0.5)
+	root.add_child(light)
+	lights.append({"light": light, "base": 4.0, "seed": randf() * 10.0, "flame": halo})
+	return true
+
+
+## Настенный факел у ближайшей грани стены. Если стены рядом нет — false,
+## и вызывающий ставит напольный.
+func _wall_torch_near(pos: Vector3) -> bool:
+	if not kit.has("torch"):
+		return false
+	var c := _nearest_open_cell(pos)
+	var best := INF
+	var best_d := Vector2i.ZERO
+	for d in SIDES:
+		if not _wall_at(c, d):
+			continue
+		var p := cell_center(c.x, c.y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+		var dd := p.distance_squared_to(pos)
+		if dd < best:
+			best = dd
+			best_d = d
+	if best_d == Vector2i.ZERO:
+		return false
+	return _wall_torch(c, best_d)
+
+
 func _scatter_torches(max_count: int = 12) -> void:
-	"""Ставит факелы вдоль стен, чтобы коридоры не были чёрными."""
+	"""Ставит факелы на стены, чтобы коридоры не были чёрными."""
 	var placed := 0
 	var step := 7
 	for y in map_h:
@@ -1646,29 +1761,25 @@ func _scatter_torches(max_count: int = 12) -> void:
 				return
 			if grid[y][x]:
 				continue
-			# нормаль стены: факел придвигается вплотную к новому каменному
-			# лицу, а не втыкается в него древком
-			var out := Vector3.ZERO
+			var d := Vector2i.ZERO
 			if y > 0 and grid[y - 1][x]:
-				out = Vector3(0, 0, -1)
+				d = Vector2i(0, -1)
 			elif y < map_h - 1 and grid[y + 1][x]:
-				out = Vector3(0, 0, 1)
+				d = Vector2i(0, 1)
 			elif x > 0 and grid[y][x - 1]:
-				out = Vector3(-1, 0, 0)
+				d = Vector2i(-1, 0)
 			elif x < map_w - 1 and grid[y][x + 1]:
-				out = Vector3(1, 0, 0)
-			if out == Vector3.ZERO:
+				d = Vector2i(1, 0)
+			if d == Vector2i.ZERO:
 				continue
 			if (x * 5 + y * 11) % step != 0:
 				continue
-			var pos := cell_center(x, y) + out * (T * 0.5 - 0.3)
-			if _light_near(pos, 2.6):
+			var pos := cell_center(x, y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+			if _light_near(pos + Vector3(0.0, 1.4, 0.0), 2.6):
 				continue
-			_torch(pos)
 			# у декоративных факелов тени отключаем: иначе теневой атлас
 			# переполняется и свет пропадает
-			if lights.size() > 0:
-				lights[lights.size() - 1]["light"].shadow_enabled = false
+			_wall_torch(Vector2i(x, y), d, false)
 			placed += 1
 
 

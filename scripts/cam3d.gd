@@ -34,6 +34,14 @@ func _ready() -> void:
 	camera.fov = BASE_FOV
 	camera.position = Vector3(0.45, 0.10, 0.0)
 	camera.current = true
+	# DOF дальнего плана: размывается только глубина залов дальше 25 м —
+	# граница отодвинута, чтобы блюр не схватывал половину кадра подземелья
+	var attrs := CameraAttributesPractical.new()
+	attrs.dof_blur_far_enabled = true
+	attrs.dof_blur_far_distance = 25.0
+	attrs.dof_blur_far_transition = 5.0
+	attrs.dof_blur_amount = 0.05
+	camera.attributes = attrs
 	spring.add_child(camera)
 
 	# «походный свет» у камеры: подсвечивает то, на что смотрит игрок,

@@ -9,6 +9,10 @@
 Связанные документы: [07_NEXT_ROADMAP.md](07_NEXT_ROADMAP.md) (фаза 4),
 [03_ARTBIBLE.md](03_ARTBIBLE.md), [08_VISUAL_BUGS.md](08_VISUAL_BUGS.md).
 
+> **Отчёт по этапу B «геометрия»:** кладка уровня собрана из набора Medieval
+> Underground Dungeon — [11_DUNGEON_KIT.md](11_DUNGEON_KIT.md) (результаты,
+> замеры, открытые вопросы).
+
 ---
 
 ## 0. Baseline (до правок)
