@@ -620,6 +620,16 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if dialogue_root == null or not dialogue_root.visible:
 		return
+	# Пока открыт выбор, Enter/ЛКМ не должны «проглатываться» как перелистывание
+	# реплики: выбор делается цифрами 1–3 или мышью по кнопке.
+	if choices_open:
+		if event.is_action_pressed("choice_1"):
+			_select_choice(0)
+		elif event.is_action_pressed("choice_2"):
+			_select_choice(1)
+		elif event.is_action_pressed("choice_3"):
+			_select_choice(2)
+		return
 	var pressed: bool = event.is_action_pressed("confirm") or event.is_action_pressed("attack") \
 		or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
 	if not pressed:
@@ -632,10 +642,33 @@ func _unhandled_input(event: InputEvent) -> void:
 		waiting_advance = false
 
 
+func _select_choice(index: int) -> void:
+	if not choices_open:
+		return
+	Sfx.play("sfx_click", -6.0)
+	get_viewport().set_input_as_handled()
+	choice_made.emit(index)
+
+
+## Плоская кнопка выбора: в тёмном HUD стандартный серый Button теряется.
+func _choice_style(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(2)
+	sb.content_margin_left = 8.0
+	sb.content_margin_right = 8.0
+	sb.content_margin_top = 3.0
+	sb.content_margin_bottom = 3.0
+	return sb
+
+
 func ask(prompt: String, options: Array) -> int:
 	hide_play_hud(true)
 	speaker_label.text = prompt
-	text_label.text = ""
+	text_label.text = "Выберите ответ мышью или клавишами 1–3."
+	text_label.visible_characters = -1
 	dialogue_root.visible = true
 	choices_open = true
 	for c in choice_root.get_children():
@@ -646,24 +679,45 @@ func ask(prompt: String, options: Array) -> int:
 		var b := Button.new()
 		b.text = "%d.  %s" % [i + 1, opt]
 		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", Color(0.92, 0.88, 0.78))
+		b.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.62))
+		b.add_theme_color_override("font_focus_color", Color(1.0, 0.9, 0.62))
 		b.custom_minimum_size = Vector2(280, 26)
-		b.pressed.connect(func():
-			Sfx.play("sfx_click", -6.0)
-			choice_made.emit(i))
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.focus_mode = Control.FOCUS_ALL
+		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		b.add_theme_stylebox_override("normal",
+			_choice_style(Color(0.055, 0.065, 0.085, 0.96), Color(0.35, 0.31, 0.22, 0.9)))
+		b.add_theme_stylebox_override("hover",
+			_choice_style(Color(0.12, 0.11, 0.08, 0.96), Color(0.78, 0.62, 0.28, 0.95)))
+		b.add_theme_stylebox_override("focus",
+			_choice_style(Color(0.12, 0.11, 0.08, 0.96), Color(0.9, 0.72, 0.32, 1.0)))
+		b.add_theme_stylebox_override("pressed",
+			_choice_style(Color(0.16, 0.12, 0.07, 0.98), Color(0.95, 0.75, 0.35, 1.0)))
+		b.pressed.connect(func(): _select_choice(i))
 		choice_root.add_child(b)
 		idx += 1
 	choice_root.visible = true
-	choice_root.position = Vector2(180, 258)
+	# Варианты выше диалоговой панели: иначе кнопки лежат поверх текста и
+	# кажутся частью фона.
+	choice_root.position = Vector2(180, 150)
 	if auto:
 		choice_root.visible = false
 		choices_open = false
 		dialogue_root.visible = false
 		return 0
+	# Без видимого курсора кнопки мыши не выбрать: в миссии он захвачен.
+	var prev_mouse: int = Input.mouse_mode
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var first: Button = choice_root.get_child(0) as Button
+	if first != null:
+		first.grab_focus()
 	var choice: int = await choice_made
 	choice_root.visible = false
 	choices_open = false
 	dialogue_root.visible = false
 	hide_play_hud(false)
+	Input.mouse_mode = prev_mouse if not get_tree().paused else Input.MOUSE_MODE_VISIBLE
 	return choice
 
 

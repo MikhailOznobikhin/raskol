@@ -614,6 +614,37 @@ func _test_mode() -> void:
 		print("TEST FAIL: экран инвентаря не закрылся")
 		get_tree().quit()
 		return
+	# --- выбор в диалоге: курсор обязан быть видимым, а цифры 1–3 работать.
+	# Раньше мышь оставалась захваченной, и диалог с выбором нельзя было закрыть.
+	m.hud.auto = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var mode_before: int = Input.mouse_mode
+	m.hud.ask("TEST choice", ["A", "B", "C"])
+	await get_tree().process_frame
+	var choice_open: bool = m.hud.choices_open
+	var choice_mouse: bool = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE
+	var choice_buttons: int = m.hud.choice_root.get_child_count()
+	print("TEST choice open=", choice_open, " mouse_visible=", choice_mouse,
+		" buttons=", choice_buttons)
+	if not choice_open or not choice_mouse or choice_buttons != 3:
+		print("TEST FAIL: выбор не открылся или курсор остался захваченным")
+		get_tree().quit()
+		return
+	var choice_ev := InputEventAction.new()
+	choice_ev.action = "choice_2"
+	choice_ev.pressed = true
+	m.hud._unhandled_input(choice_ev)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var choice_closed: bool = not m.hud.choices_open
+	var mouse_restored: bool = Input.mouse_mode == mode_before
+	print("TEST choice closed=", choice_closed, " mouse_restored=", mouse_restored,
+		" mode=", Input.mouse_mode, " before=", mode_before)
+	if not choice_closed or not mouse_restored:
+		print("TEST FAIL: выбор не закрылся или курсор не вернулся в игру")
+		get_tree().quit()
+		return
+	m.hud.auto = true
 	m._finish()
 	await get_tree().create_timer(1.6).timeout
 	print("TEST DONE escaped=", GameState.escaped)

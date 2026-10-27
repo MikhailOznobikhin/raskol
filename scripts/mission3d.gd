@@ -398,7 +398,10 @@ func _set_objective(text: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# паузу и курсор ведёт HUD (одно место на весь проект);
-	# здесь только возвращаем захват мыши кликом по миру после паузы
+	# здесь только возвращаем захват мыши кликом по миру после паузы.
+	# Во время выбора курсор обязан оставаться видимым, иначе кнопки недоступны.
+	if hud != null and hud.choices_open:
+		return
 	if event is InputEventMouseButton and event.pressed \
 			and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not get_tree().paused:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
