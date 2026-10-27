@@ -248,7 +248,7 @@ func _build_rig() -> void:
 ## Если модель не загрузилась — остаются примитивы (игра не ломается).
 func _attach_model() -> void:
 	ModelUtil.hide_meshes(rig)
-	var model := ModelUtil.spawn(rig, "res://assets/player.glb", Balance.HERO_MODEL_HEIGHT)
+	var model := ModelUtil.spawn(rig, "res://assets/hero_mixamo.glb", Balance.HERO_MODEL_HEIGHT)
 	if model == null:
 		ModelUtil.show_meshes(rig)
 		return

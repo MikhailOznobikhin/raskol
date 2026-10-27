@@ -15,7 +15,10 @@ const HAT_BAND := Color(0.16, 0.13, 0.12)
 
 
 static func decorate(model: Node3D) -> void:
-	var att := ModelUtil.bone_attach(model, ["Head", "mixamorig:Head", "head"])
+	# Mixamo-риг после запекания даёт кости с подчёркиванием (mixamorig_Head),
+	# а не с двоеточием как в исходном FBX — без этого варианта шапка не висит.
+	var att := ModelUtil.bone_attach(model,
+		["Head", "mixamorig_Head", "mixamorig:Head", "head"])
 	if att == null:
 		return
 	att.name = "GnomeHat"

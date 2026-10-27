@@ -9,6 +9,7 @@ class_name ModelUtil
 ## для встроенных ассетов берём проверенные числа, а для прочих — AABB.
 const NATIVE_HEIGHT := {
 	"res://assets/player.glb": 1.83,
+	"res://assets/hero_mixamo.glb": 2.047,
 	"res://assets/guard.glb": 4.99,
 	"res://assets/guard_zombie.glb": 4.05,
 	"res://assets/monster.glb": 2.84,
