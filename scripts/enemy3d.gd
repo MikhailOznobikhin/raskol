@@ -675,20 +675,35 @@ func _build_anim_tree() -> void:
 	if walk != "":
 		sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = walk
 	if attack != "":
-		sm.add_node("Attack", AnimationNodeAnimation.new()); sm.get_node("Attack").animation = attack
+		# у AnimationNodeAnimation нет speed_scale: взмах на 1.3x задаём длиной
+		# custom timeline, чтобы контакт клипа совпал с моментом урона (0.35 с)
+		var an := AnimationNodeAnimation.new()
+		an.animation = attack
+		an.use_custom_timeline = true
+		an.stretch_time_scale = true
+		var aa: Animation = anim.get_animation(attack)
+		var alen: float = aa.length if aa != null else 0.72
+		an.timeline_length = alen / 1.3
+		sm.add_node("Attack", an)
 	if die != "":
 		sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
-	sm.add_transition("Idle", "Move", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Move", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Attack", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Move", "Attack", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Attack", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Attack", "Move", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Death", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Move", "Death", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Move", _xfade(0.15))
+	sm.add_transition("Move", "Idle", _xfade(0.15))
+	sm.add_transition("Idle", "Attack", _xfade(0.08))
+	sm.add_transition("Move", "Attack", _xfade(0.08))
+	sm.add_transition("Attack", "Idle", _xfade(0.12))
+	sm.add_transition("Attack", "Move", _xfade(0.12))
+	sm.add_transition("Idle", "Death", _xfade(0.12))
+	sm.add_transition("Move", "Death", _xfade(0.12))
 	anim_tree.active = true
 	anim_tree.anim_player = anim.get_path()
 	anim_state = anim_tree.get("parameters/playback")
+
+
+func _xfade(fade: float) -> AnimationNodeStateMachineTransition:
+	var tr := AnimationNodeStateMachineTransition.new()
+	tr.xfade_time = fade
+	return tr
 
 
 ## Анимации модели: Idle/Walk/Attack/Death — набор клипов у стражи и босса общий.
@@ -703,12 +718,11 @@ func _animate_model(dt: float) -> void:
 			ModelUtil.play_key(anim, ["Die", "Death"], false)
 		return
 	if state == "attack":
+		# клип-взмах 0.72 с: контакт на 0.50 с при 1.3x ≈ 0.38 с — рядом с уроном (0.35 с)
 		if anim_state != null and anim_state.has_method("travel"):
 			anim_state.travel("Attack")
 		else:
-			ModelUtil.play_key(anim, ["Attack"], false, 1.0)
-		if anim_tree != null:
-			anim_tree.set("parameters/Attack/speed_scale", 1.0)
+			ModelUtil.play_key(anim, ["Attack"], false, 1.3)
 		return
 	if anim_state != null and anim_state.has_method("travel"):
 		if sp > 0.25:

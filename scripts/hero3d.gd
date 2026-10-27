@@ -61,6 +61,11 @@ var weapon_model: Node3D
 var anim: AnimationPlayer
 var anim_tree: AnimationTree
 var anim_state: AnimationNodeStateMachinePlayback
+## шаг комбо, для которого Slash уже запущен (-99 — атаки нет)
+var slash_step := -99
+## узел Slash и длина его клипа: скорость взмаха задаём через custom timeline
+var slash_node: AnimationNodeAnimation
+var slash_len := 0.72
 
 signal died
 
@@ -574,7 +579,8 @@ func _physics_process(delta: float) -> void:
 				_set_state("idle")
 		"attack":
 			target_speed = SPEED * 0.25
-			if state_t > 0.16 and not attack_done:
+			# 0.25 с — момент контакта в подрезанном клипе Slash (0.50 с при 2.0x)
+			if state_t > 0.25 and not attack_done:
 				attack_done = true
 				_hit(false)
 			if state_t > ATTACK_TIME:
@@ -928,8 +934,17 @@ func _build_anim_tree() -> void:
 		sm.add_node("Run", AnimationNodeAnimation.new())
 		sm.get_node("Run").animation = run
 	if slash != "":
-		sm.add_node("Slash", AnimationNodeAnimation.new())
-		sm.get_node("Slash").animation = slash
+		# у AnimationNodeAnimation нет параметра speed_scale: скорость взмаха
+		# задаётся длиной custom timeline (клип растягивается/сжимается под неё)
+		slash_node = AnimationNodeAnimation.new()
+		slash_node.animation = slash
+		slash_node.use_custom_timeline = true
+		slash_node.stretch_time_scale = true
+		var slash_anim: Animation = anim.get_animation(slash)
+		if slash_anim != null:
+			slash_len = slash_anim.length
+		slash_node.timeline_length = slash_len
+		sm.add_node("Slash", slash_node)
 	if roll != "":
 		sm.add_node("Roll", AnimationNodeAnimation.new())
 		sm.get_node("Roll").animation = roll
@@ -939,36 +954,42 @@ func _build_anim_tree() -> void:
 	if death != "":
 		sm.add_node("Death", AnimationNodeAnimation.new())
 		sm.get_node("Death").animation = death
-	sm.add_transition("Idle", "Walk", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Run", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Walk", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Run", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Slash", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Slash", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Slash", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Slash", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Slash", "Walk", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Slash", "Run", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Roll", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Roll", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Roll", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Roll", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Roll", "Walk", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Roll", "Run", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Hit", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Hit", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Hit", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Hit", "Idle", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Hit", "Walk", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Hit", "Run", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Idle", "Death", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Walk", "Death", AnimationNodeStateMachineTransition.new())
-	sm.add_transition("Run", "Death", AnimationNodeStateMachineTransition.new())
+	sm.add_transition("Idle", "Walk", _xfade(0.15))
+	sm.add_transition("Walk", "Idle", _xfade(0.15))
+	sm.add_transition("Walk", "Run", _xfade(0.15))
+	sm.add_transition("Run", "Walk", _xfade(0.15))
+	sm.add_transition("Idle", "Run", _xfade(0.15))
+	sm.add_transition("Run", "Idle", _xfade(0.15))
+	sm.add_transition("Idle", "Slash", _xfade(0.06))
+	sm.add_transition("Walk", "Slash", _xfade(0.06))
+	sm.add_transition("Run", "Slash", _xfade(0.06))
+	sm.add_transition("Slash", "Idle", _xfade(0.12))
+	sm.add_transition("Slash", "Walk", _xfade(0.12))
+	sm.add_transition("Slash", "Run", _xfade(0.12))
+	sm.add_transition("Idle", "Roll", _xfade(0.06))
+	sm.add_transition("Walk", "Roll", _xfade(0.06))
+	sm.add_transition("Run", "Roll", _xfade(0.06))
+	sm.add_transition("Roll", "Idle", _xfade(0.12))
+	sm.add_transition("Roll", "Walk", _xfade(0.12))
+	sm.add_transition("Roll", "Run", _xfade(0.12))
+	sm.add_transition("Idle", "Hit", _xfade(0.04))
+	sm.add_transition("Walk", "Hit", _xfade(0.04))
+	sm.add_transition("Run", "Hit", _xfade(0.04))
+	sm.add_transition("Hit", "Idle", _xfade(0.10))
+	sm.add_transition("Hit", "Walk", _xfade(0.10))
+	sm.add_transition("Hit", "Run", _xfade(0.10))
+	sm.add_transition("Idle", "Death", _xfade(0.15))
+	sm.add_transition("Walk", "Death", _xfade(0.15))
+	sm.add_transition("Run", "Death", _xfade(0.15))
 	anim_tree.active = true
 	anim_tree.anim_player = anim.get_path()
 	anim_state = anim_tree.get("parameters/playback")
+
+
+func _xfade(fade: float) -> AnimationNodeStateMachineTransition:
+	var tr := AnimationNodeStateMachineTransition.new()
+	tr.xfade_time = fade
+	return tr
 
 
 func _animate_model(dt: float) -> void:
@@ -982,13 +1003,27 @@ func _animate_model(dt: float) -> void:
 			ModelUtil.play_key(anim, ["Death"], false)
 		return
 	if state == "attack" or state == "heavy":
+		# клип подрезан до одного взмаха 0.72 с: контакт на 0.50 с,
+		# при 2.0x удар ложится на хит-кадр 0.25 с и весь замах успевает проиграть
+		var step := combo_step if state == "attack" else -1
+		var sc := (2.0 + 0.08 * combo_step) if state == "attack" else 1.2
+		if slash_node != null:
+			slash_node.timeline_length = maxf(0.1, slash_len / sc)
 		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Slash")
+			if slash_step != step:
+				# travel() не перезапускает текущее состояние — шаг комбо рестартим явно
+				if slash_step == -99:
+					anim_state.travel("Slash")
+				else:
+					anim_state.start("Slash", true)
+				slash_step = step
+			else:
+				anim_state.travel("Slash")
 		else:
-			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, 1.05 + 0.16 * combo_step, 0.07 if state == "attack" else 0.10)
-		if anim_tree != null:
-			anim_tree.set("parameters/Slash/speed_scale", 1.05 + 0.16 * combo_step if state == "attack" else 0.72)
+			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, sc,
+				0.07 if state == "attack" else 0.10)
 		return
+	slash_step = -99
 	if state == "dodge":
 		if anim_state != null and anim_state.has_method("travel"):
 			anim_state.travel("Roll")
