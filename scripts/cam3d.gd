@@ -16,6 +16,9 @@ var spring: SpringArm3D
 var camera: Camera3D
 var shake_amp := 0.0
 var shake_t := 0.0
+var shake_duration := 0.0
+var shake_phase := 0.0
+var shake_dir := Vector2.RIGHT
 var cam_h := 1.55
 var follow := Vector3.ZERO
 var follow_ready := false
@@ -92,11 +95,14 @@ func _process(delta: float) -> void:
 	rotation = Vector3(pitch, yaw, 0)
 	if shake_t > 0.0:
 		shake_t -= delta
-		# 0.012 — даже shake(8) даёт около 0.1 м, а не «землетрясение»
-		camera.h_offset = randf_range(-shake_amp, shake_amp) * 0.012
-		camera.v_offset = randf_range(-shake_amp, shake_amp) * 0.012
-		shake_amp = maxf(0.0, shake_amp - delta * 20.0)
+		shake_phase += delta * TAU * 24.0
+		var fade: float = clampf(shake_t / maxf(shake_duration, 0.001), 0.0, 1.0)
+		var impulse: float = sin(shake_phase) * fade * shake_amp * 0.012
+		camera.h_offset = shake_dir.x * impulse
+		camera.v_offset = shake_dir.y * impulse
 	else:
+		shake_amp = 0.0
+		shake_duration = 0.0
 		camera.h_offset = lerp(camera.h_offset, 0.0, delta * 10.0)
 		camera.v_offset = lerp(camera.v_offset, 0.0, delta * 10.0)
 	# покачивание добавляем поверх тряски: position камеры принадлежит SpringArm3D
@@ -104,6 +110,20 @@ func _process(delta: float) -> void:
 	camera.v_offset += sin(bob_t * 2.0) * bob_amp
 
 
-func shake(amount: float, duration: float) -> void:
+func shake(amount: float, duration: float, impact_direction: Vector3 = Vector3.ZERO) -> void:
+	if amount <= 0.0 or duration <= 0.0:
+		return
+	if impact_direction.length_squared() > 0.0001:
+		var right: Vector3 = camera.global_transform.basis.x
+		var up: Vector3 = camera.global_transform.basis.y
+		var screen_dir := Vector2(
+			-impact_direction.dot(right),
+			impact_direction.dot(up)
+		)
+		if screen_dir.length_squared() > 0.0001:
+			shake_dir = screen_dir.normalized()
+	else:
+		shake_dir = Vector2.RIGHT
 	shake_amp = maxf(shake_amp, amount)
 	shake_t = maxf(shake_t, duration)
+	shake_duration = maxf(shake_duration, duration)

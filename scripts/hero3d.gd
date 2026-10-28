@@ -13,6 +13,12 @@ const LIGHT_DMG: float = Balance.HERO_LIGHT_DMG
 const HEAVY_DMG: float = Balance.HERO_HEAVY_DMG
 const HEAVY_WINDUP: float = Balance.HERO_HEAVY_WINDUP
 const ATTACK_TIME := Balance.HERO_ATTACK_TIME
+const HITSTOP_DURATION := 0.055
+const HITSTOP_TIME_SCALE := 0.4
+
+static var hitstop_generation := 0
+static var hitstop_active := false
+static var hitstop_restore_scale := 1.0
 
 var state := "idle"
 var state_t := 0.0
@@ -483,6 +489,8 @@ func _launch_spike(dir: Vector3) -> void:
 			var body = hit.get("collider")
 			if body != null and body.has_method("take_damage"):
 				body.take_damage(Balance.SPIKE_DMG * GameState.spell_damage_mult(), global_position)
+				_hitstop()
+				_shake(0.9, 0.12, dir)
 			_spike_hit_fx(next)
 			mi.queue_free()
 			return
@@ -539,7 +547,7 @@ func _cast_nova() -> void:
 		if e.has_method("knockback") and to.length() > 0.05:
 			e.knockback(to.normalized(), 6.0)
 	_nova_fx(center)
-	_shake(4.5, 0.35)
+	_shake(2.6, 0.18)
 	_hitstop()
 
 
@@ -821,16 +829,17 @@ func _hit(heavy: bool) -> void:
 		_hitstop()
 		emit_noise(Balance.NOISE_HIT)
 		# первые два удара комбо только помечают ритм, третий и тяжёлый бьют по камере
-		_shake(2.6 if heavy else 0.45 + 0.9 * combo_step, 0.15)
+		_shake(2.6 if heavy else 0.45 + 0.9 * combo_step, 0.15,
+			hit_pos - global_position)
 	else:
 		Sfx.play_at("sfx_swing", _sfx_pos(), -14.0, 1.2)
 
 
 ## Толкает камеру — главный способ «почувствовать» удар под ногами.
-func _shake(amount: float, duration: float) -> void:
+func _shake(amount: float, duration: float, impact_direction: Vector3 = Vector3.ZERO) -> void:
 	var cam_node := get_tree().get_first_node_in_group("cam")
 	if cam_node != null and cam_node.has_method("shake"):
-		cam_node.shake(amount, duration)
+		cam_node.shake(amount, duration, impact_direction)
 
 
 ## Точка у груди героя — откуда звучат его взмахи и шаги.
@@ -846,11 +855,14 @@ func take_damage(amount: float, from := Vector3.ZERO) -> void:
 	_bark_damage()
 	Sfx.play_at("sfx_hit", _sfx_pos(), -5.0)
 	_set_state("hurt")
-	_shake(2.2, 0.18)
+	_hitstop()
+	var recoil := Vector3.ZERO
 	if from != Vector3.ZERO:
-		var away := (global_position - from)
-		away.y = 0
-		velocity = away.normalized() * 6.0
+		recoil = global_position - from
+		recoil.y = 0.0
+		if recoil.length_squared() > 0.0001:
+			velocity = recoil.normalized() * 6.0
+	_shake(2.2, 0.18, recoil)
 	emit_noise(Balance.NOISE_HIT)
 	if GameState.health <= 0.0:
 		die()
@@ -1226,9 +1238,17 @@ func _impact(pos: Vector3, heavy: bool) -> void:
 
 
 func _hitstop() -> void:
-	Engine.time_scale = 0.4
-	await get_tree().create_timer(0.05, true, false, true).timeout
-	Engine.time_scale = 1.0
+	if not hitstop_active:
+		hitstop_restore_scale = Engine.time_scale
+		hitstop_active = true
+	hitstop_generation += 1
+	var request_id: int = hitstop_generation
+	Engine.time_scale = minf(Engine.time_scale, HITSTOP_TIME_SCALE)
+	await get_tree().create_timer(HITSTOP_DURATION, true, false, true).timeout
+	if request_id != hitstop_generation:
+		return
+	Engine.time_scale = hitstop_restore_scale
+	hitstop_active = false
 
 
 func _bark_damage() -> void:
