@@ -49,6 +49,10 @@ var choices_open := false
 var auto := false
 
 const BAR_W := 132
+const BAR_H := 4
+## Рамка иконки у полоски и зазор до неё (в координатах HUD 640×360).
+const ICON_SLOT := 10.0
+const ICON_GAP := 4.0
 const COLOR_INK := Color(0.012, 0.016, 0.022, 0.94)
 const COLOR_PARCHMENT := Color(0.94, 0.90, 0.80)
 const COLOR_MUTED := Color(0.76, 0.75, 0.70)
@@ -100,29 +104,58 @@ func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Col
 	return l
 
 
+## Кэш поправок иконок: путь текстуры -> сдвиг в координатах HUD.
+var _icon_offset := {}
+
+
 func _bar(pos: Vector2, color: Color, icon_path: String) -> ColorRect:
 	var bg := ColorRect.new()
 	bg.color = Color(0.10, 0.105, 0.11, 0.9)
 	bg.position = pos
-	bg.size = Vector2(BAR_W - 2, 4)
+	bg.size = Vector2(BAR_W, BAR_H)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	var fill := ColorRect.new()
 	fill.color = color
 	fill.position = pos + Vector2(1, 0)
-	fill.size = Vector2(BAR_W - 2, 4)
+	fill.size = Vector2(BAR_W - 2, BAR_H)
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(fill)
 	var icon := TextureRect.new()
 	icon.texture = Art.tex(icon_path)
-	icon.position = pos + Vector2(-14, -3)
-	icon.size = Vector2(10, 10)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.modulate = COLOR_PARCHMENT
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.size = Vector2(ICON_SLOT, ICON_SLOT)
+	# иконка слева от полоски и ровно по её середине
+	icon.position = pos + Vector2(-ICON_SLOT - ICON_GAP, (BAR_H - ICON_SLOT) * 0.5)
+	icon.position -= _icon_content_offset(icon_path)
 	add_child(icon)
 	return fill
+
+
+## Поправка к позиции иконки: у текстур разный прозрачный отступ, из-за него
+## рисунок кажется съехавшим от середины полоски. Сдвигаем так, чтобы середина
+## непрозрачных пикселей совпала с серединой рамки.
+func _icon_content_offset(icon_path: String) -> Vector2:
+	if _icon_offset.has(icon_path):
+		return _icon_offset[icon_path]
+	var offset := Vector2.ZERO
+	var tex: Texture2D = Art.tex(icon_path)
+	if tex != null:
+		var img: Image = tex.get_image()
+		if img != null and not img.is_empty():
+			if img.is_compressed():
+				img.decompress()
+			var used: Rect2i = img.get_used_rect()
+			if used.size.x > 0 and used.size.y > 0:
+				var tex_size := Vector2(img.get_size())
+				var center := Vector2(used.position) + Vector2(used.size) * 0.5
+				var k: float = ICON_SLOT / maxf(tex_size.x, tex_size.y)
+				offset = (center - tex_size * 0.5) * k
+	_icon_offset[icon_path] = offset
+	return offset
 
 
 func _build() -> void:
