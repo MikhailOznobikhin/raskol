@@ -432,10 +432,11 @@ func _spawn_lore_pickups() -> void:
 	var notes: Array = lore.get("notes", [])
 	var items: Array = lore.get("items", [])
 	var note_pos := [Vector3(14, 0, 58), Vector3(31, 0, 49), Vector3(45, 0, 58),
-		Vector3(80, 0, 57), Vector3(11, 0, 31)]
+		Vector3(80, 0, 57), Vector3(11, 0, 31), Vector3(126, 0, 30),
+		Vector3(100, 0, 76)]
 	var item_pos := [Vector3(17, 0, 57), Vector3(28, 0, 47), Vector3(46, 0, 60),
 		Vector3(78, 0, 59), Vector3(88, 0, 31), Vector3(48, 0, 31),
-		Vector3(15, 0, 33)]
+		Vector3(15, 0, 33), Vector3(140, 0, 38), Vector3(108, 0, 80)]
 	for i in mini(notes.size(), note_pos.size()):
 		_make_pickup("note", i, note_pos[i], Color(0.9, 0.8, 0.55))
 	for i in mini(items.size(), item_pos.size()):

@@ -210,6 +210,18 @@ func _shots_mode() -> void:
 			m.cam.pitch = 0.08
 		await get_tree().create_timer(1.2).timeout
 		await _shot("3d_mine_loop")
+		m.hero.global_position = Vector3(130.0, 0.2, 38.0)
+		if m.cam:
+			m.cam.yaw = PI * 0.5
+			m.cam.pitch = 0.08
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_cistern")
+		m.hero.global_position = Vector3(112.0, 0.2, 76.0)
+		if m.cam:
+			m.cam.yaw = -2.0
+			m.cam.pitch = 0.08
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_deep_mine")
 	if m and m.hud:
 		m.hud.visible = true
 		m.hud.set_process(true)
@@ -486,6 +498,39 @@ func _mouse_click(pos: Vector2) -> void:
 	Input.parse_input_event(b)
 
 
+func _map_region_connected(dungeon: Dungeon, start: Vector2i, goal: Vector2i,
+		bounds: Rect2i) -> bool:
+	if not bounds.has_point(start) or not bounds.has_point(goal) \
+			or dungeon.is_wall(start.x, start.y) or dungeon.is_wall(goal.x, goal.y):
+		return false
+	var frontier: Array[Vector2i] = [start]
+	var visited: Dictionary = {start: true}
+	var directions: Array[Vector2i] = [
+		Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN,
+	]
+	var head := 0
+	while head < frontier.size():
+		var cell := frontier[head]
+		head += 1
+		if cell == goal:
+			return true
+		for direction in directions:
+			var next := cell + direction
+			if not bounds.has_point(next) or visited.has(next) \
+					or dungeon.is_wall(next.x, next.y):
+				continue
+			visited[next] = true
+			frontier.append(next)
+	return false
+
+
+func _count_lights(node: Node) -> int:
+	var count := 1 if node is Light3D else 0
+	for child in node.get_children():
+		count += _count_lights(child)
+	return count
+
+
 func _test_mode() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	start_mission()
@@ -540,6 +585,62 @@ func _test_mode() -> void:
 		get_tree().quit()
 		return
 	print("TEST side loop connected=true sealed=true note=true item=true")
+	var expanded_map: bool = m.dungeon.map_w == 78 and m.dungeon.map_h == 46
+	var cistern_connected := _map_region_connected(m.dungeon,
+		Vector2i(57, 16), Vector2i(57, 19), Rect2i(57, 14, 18, 8))
+	var cistern_to_route := _map_region_connected(m.dungeon,
+		Vector2i(57, 16), Vector2i(50, 16), Rect2i(0, 0,
+			m.dungeon.map_w, m.dungeon.map_h))
+	var cistern_second_to_route := _map_region_connected(m.dungeon,
+		Vector2i(57, 19), Vector2i(50, 19), Rect2i(0, 0,
+			m.dungeon.map_w, m.dungeon.map_h))
+	var lower_mine_connected := _map_region_connected(m.dungeon,
+		Vector2i(46, 32), Vector2i(54, 32), Rect2i(46, 32, 10, 10))
+	var lower_mine_to_route := _map_region_connected(m.dungeon,
+		Vector2i(46, 32), Vector2i(40, 30), Rect2i(0, 0,
+			m.dungeon.map_w, m.dungeon.map_h))
+	var lower_mine_second_to_route := _map_region_connected(m.dungeon,
+		Vector2i(54, 32), Vector2i(54, 30), Rect2i(0, 0,
+			m.dungeon.map_w, m.dungeon.map_h))
+	var cistern_note := false
+	var cistern_item := false
+	var lower_mine_note := false
+	var lower_mine_item := false
+	var dungeon_light_count := _count_lights(m.dungeon)
+	for pickup in m.pickups:
+		var pickup_node: Node3D = pickup["node"]
+		var px: float = pickup_node.position.x
+		var pz: float = pickup_node.position.z
+		if pickup["kind"] == "note" and pickup["index"] == 5 \
+				and px >= 122.0 and px <= 148.0 and pz >= 28.0 and pz <= 42.0:
+			cistern_note = true
+		elif pickup["kind"] == "item" and pickup["index"] == 7 \
+				and px >= 122.0 and px <= 148.0 and pz >= 28.0 and pz <= 42.0:
+			cistern_item = true
+		elif pickup["kind"] == "note" and pickup["index"] == 6 \
+				and px >= 74.0 and px <= 132.0 and pz >= 68.0 and pz <= 86.0:
+			lower_mine_note = true
+		elif pickup["kind"] == "item" and pickup["index"] == 8 \
+				and px >= 74.0 and px <= 132.0 and pz >= 68.0 and pz <= 86.0:
+			lower_mine_item = true
+	if not expanded_map or not cistern_connected or not cistern_to_route \
+			or not cistern_second_to_route or not lower_mine_connected \
+			or not lower_mine_to_route or not lower_mine_second_to_route \
+			or not cistern_note or not cistern_item \
+			or not lower_mine_note or not lower_mine_item \
+			or dungeon_light_count > 30:
+		print("TEST FAIL: expansion size=", m.dungeon.map_w, "x", m.dungeon.map_h,
+			" cistern=", cistern_connected, "/", cistern_to_route,
+			"/", cistern_second_to_route,
+			" lower_mine=", lower_mine_connected, "/", lower_mine_to_route,
+			"/", lower_mine_second_to_route,
+			" cistern_rewards=", cistern_note, "/", cistern_item,
+			" lower_rewards=", lower_mine_note, "/", lower_mine_item,
+			" lights=", dungeon_light_count)
+		get_tree().quit()
+		return
+	print("TEST expanded map=78x46 cistern=true lower_mine=true rewards=true lights=",
+		dungeon_light_count)
 
 	# Герой обязан надеть glTF-модель: иначе он молча остаётся примитивами,
 	# и заметить это можно только глазами в кадре.

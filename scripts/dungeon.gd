@@ -342,8 +342,9 @@ func _load_map() -> void:
 		push_error("нет карты 3D")
 		return
 	for l in f.get_as_text().split("\n"):
-		if l.strip_edges().length() > 0:
-			lines.append(l)
+		var row_text := l.strip_edges()
+		if row_text.length() > 0:
+			lines.append(row_text)
 	map_h = lines.size()
 	map_w = lines[0].length()
 	for y in map_h:
@@ -1147,23 +1148,28 @@ func _add_atmosphere() -> void:
 	_add_grime_decals()
 
 
-## Два холодных конуса из щелей свода: дают контровой свет и видимый объём
+## Световые конусы из щелей свода: дают контровой свет и видимый объём
 ## туману. Тени не включаем: теневой бюджет занят факелами у игрока.
 func _add_light_shafts() -> void:
-	# Два зала на маршруте камеры: коридор у старта и зал с колоннами.
-	# Случайный поиск уводил лучи в невидимые комнаты на другом конце карты.
-	var anchors := [Vector3(46.0, 0.0, 50.0), Vector3(58.0, 0.0, 44.0)]
+	# Два зала основного маршрута и два ответвления с разными оттенками света.
+	var anchors := [
+		Vector3(46.0, 0.0, 50.0),
+		Vector3(58.0, 0.0, 44.0),
+		Vector3(130.0, 0.0, 34.0),
+		Vector3(110.0, 0.0, 74.0),
+	]
 	var cells: Array[Vector2i] = []
 	for a in anchors:
 		var c := _nearest_open_cell(a)
 		if not cells.has(c):
 			cells.append(c)
-	for i in mini(2, cells.size()):
+	for i in mini(anchors.size(), cells.size()):
 		var c: Vector2i = cells[i]
 		var top: float = cell_ceil(c.x, c.y)
 		var center := cell_center(c.x, c.y)
 		var spot := SpotLight3D.new()
-		spot.light_color = Color(0.55, 0.68, 1.0)
+		spot.light_color = Color(0.55, 0.68, 1.0) if i < 2 \
+			else Color(0.48, 0.78, 0.84) if i == 2 else Color(1.0, 0.62, 0.34)
 		spot.light_energy = 8.0
 		spot.spot_range = top + 1.0
 		spot.spot_angle = 30.0
@@ -1938,13 +1944,14 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_wood)
 			for i in 3:
 				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
-		"puddle":
+		"puddle", "cistern_pool":
 			var puddle := Node3D.new()
 			puddle.position = pos + Vector3(0, 0.025, 0)
 			add_child(puddle)
 			var q := MeshInstance3D.new()
 			var pm := PlaneMesh.new()
-			pm.size = Vector2(2.2, 1.7)
+			pm.size = Vector2(5.2, 3.8) if type == "cistern_pool" \
+				else Vector2(2.2, 1.7)
 			q.mesh = pm
 			q.material_override = mat_puddle_water
 			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -2102,7 +2109,7 @@ func _wall_torch_near(pos: Vector3) -> bool:
 	return _wall_torch(c, best_d)
 
 
-func _scatter_torches(max_count: int = 12) -> void:
+func _scatter_torches(max_count: int = 4) -> void:
 	"""Ставит факелы на стены, чтобы коридоры не были чёрными."""
 	var placed := 0
 	var step := 7
@@ -2136,14 +2143,19 @@ func _scatter_torches(max_count: int = 12) -> void:
 
 func _dress_rooms() -> void:
 	var spots := {
-		"shelf": [Vector3(20, 0, 60), Vector3(60, 0, 52), Vector3(96, 0, 40)],
-		"bed": [Vector3(24, 0, 62), Vector3(100, 0, 36), Vector3(88, 0, 30)],
-		"rubble": [Vector3(34, 0, 58), Vector3(70, 0, 50), Vector3(50, 0, 40), Vector3(104, 0, 46)],
-		"rack": [Vector3(30, 0, 50), Vector3(86, 0, 34), Vector3(45, 0, 28)],
+		"shelf": [Vector3(20, 0, 60), Vector3(60, 0, 52), Vector3(96, 0, 40),
+			Vector3(144, 0, 30), Vector3(92, 0, 82)],
+		"bed": [Vector3(24, 0, 62), Vector3(100, 0, 36), Vector3(88, 0, 30),
+			Vector3(118, 0, 82)],
+		"rubble": [Vector3(34, 0, 58), Vector3(70, 0, 50), Vector3(50, 0, 40),
+			Vector3(104, 0, 46), Vector3(124, 0, 40), Vector3(84, 0, 78)],
+		"rack": [Vector3(30, 0, 50), Vector3(86, 0, 34), Vector3(45, 0, 28),
+			Vector3(126, 0, 40), Vector3(82, 0, 80)],
 		# Стартовая камера: один тёплый ключ у решётки, иначе первый кадр
 		# остаётся тёмным пятном без читаемого силуэта.
 		"brazier_stand": [Vector3(9, 0, 54)],
-		"pillar": [Vector3(38, 0, 54), Vector3(66, 0, 48), Vector3(78, 0, 42)],
+		"pillar": [Vector3(38, 0, 54), Vector3(66, 0, 48), Vector3(78, 0, 42),
+			Vector3(126, 0, 32), Vector3(92, 0, 72), Vector3(116, 0, 76)],
 		"arch": [Vector3(48, 0, 50), Vector3(58, 0, 44)],
 		"puddle": [Vector3(15, 0, 59), Vector3(48, 0, 47),
 			Vector3(72, 0, 55), Vector3(106, 0, 33), Vector3(98, 0, 42)],
