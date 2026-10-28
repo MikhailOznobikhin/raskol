@@ -16,6 +16,7 @@ const ATTACK_TIME := Balance.HERO_ATTACK_TIME
 
 var state := "idle"
 var state_t := 0.0
+var attack_phase := ""
 var attack_done := false
 var invuln := 0.0
 var dead := false
@@ -68,6 +69,8 @@ var anim_has_slash := false
 var anim_has_roll := false
 var anim_has_hit := false
 var anim_has_death := false
+var anim_locomotion_blend := 0.0
+var anim_run_blend := 0.0
 var anim_death_blend := 0.0
 var anim_was_dead := false
 var active_anim_action := ""
@@ -608,10 +611,14 @@ func _physics_process(delta: float) -> void:
 				_set_state("idle")
 		"attack":
 			target_speed = walk_speed() * 0.25
-			# 0.25 с — момент контакта в подрезанном клипе Slash (0.50 с при 2.0x)
-			if state_t > 0.25 and not attack_done:
+			if attack_phase == "active":
+				target_speed = 0.0
+			elif attack_phase == "recovery":
+				target_speed = walk_speed() * 0.3
+			if state_t >= 0.25 and not attack_done:
 				attack_done = true
 				_hit(false)
+			_update_attack_phase(0.25, ATTACK_TIME)
 			if state_t > ATTACK_TIME:
 				if attack_queued and combo_step < 2:
 					attack_queued = false
@@ -623,9 +630,14 @@ func _physics_process(delta: float) -> void:
 					_set_state("idle")
 		"heavy":
 			target_speed = walk_speed() * 0.1
-			if state_t > HEAVY_WINDUP and not attack_done:
+			if attack_phase == "active":
+				target_speed = 0.0
+			elif attack_phase == "recovery":
+				target_speed = walk_speed() * 0.2
+			if state_t >= HEAVY_WINDUP and not attack_done:
 				attack_done = true
 				_hit(true)
+			_update_attack_phase(HEAVY_WINDUP, HEAVY_WINDUP + 0.3)
 			if state_t > HEAVY_WINDUP + 0.3:
 				_set_state("idle")
 		"hurt":
@@ -671,7 +683,18 @@ func _physics_process(delta: float) -> void:
 
 
 func _handle_input() -> void:
-	if not control_enabled or state in ["attack", "heavy", "dodge", "hurt", "cast"]:
+	if not control_enabled:
+		return
+	if state in ["attack", "heavy"]:
+		if state == "attack" and Input.is_action_just_pressed("attack") \
+				and state_t >= ATTACK_TIME - 0.16:
+			attack_queued = true
+		if attack_phase == "recovery" and Input.is_action_just_pressed("dash"):
+			if _start_dodge():
+				attack_queued = false
+				combo_step = 0
+		return
+	if state in ["dodge", "hurt", "cast"]:
 		return
 	if Input.is_action_just_pressed("distract") and distract_cd <= 0.0:
 		_throw_stone()
@@ -683,22 +706,9 @@ func _handle_input() -> void:
 			and Input.is_action_just_pressed("blood_nova") and nova_cd <= 0.0:
 		_cast_nova()
 		return
-	if Input.is_action_just_pressed("dash") and GameState.spend_magic(GameState.dodge_cost()):
-		dodge_dir = move_dir
-		dodge_dir.y = 0.0
-		if dodge_dir.length() < 0.1:
-			dodge_dir = -rig.global_transform.basis.z
-			dodge_dir.y = 0.0
-		dodge_dir = dodge_dir.normalized()
-		_set_state("dodge")
-		invuln = Balance.HERO_INVULN_DODGE
-		Sfx.play_at("sfx_swing", _sfx_pos(), -10.0, 1.4)
+	if Input.is_action_just_pressed("dash") and _start_dodge():
 		return
 	if Input.is_action_just_pressed("attack"):
-		if state == "attack":
-			if state_t > 0.12:
-				attack_queued = true
-			return
 		combo_step = 0
 		_start_attack()
 		return
@@ -710,6 +720,33 @@ func _handle_input() -> void:
 		if fwd.length() > 0.05:
 			velocity = fwd.normalized() * 4.0
 		Sfx.play_at("sfx_swing", _sfx_pos(), -8.0, 0.8)
+
+
+func _start_dodge() -> bool:
+	if not GameState.spend_magic(GameState.dodge_cost()):
+		return false
+	if state in ["attack", "heavy"] and anim_tree != null and anim_has_slash:
+		anim_tree.set("parameters/SlashShot/request",
+			AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+	dodge_dir = move_dir
+	dodge_dir.y = 0.0
+	if dodge_dir.length() < 0.1:
+		dodge_dir = -rig.global_transform.basis.z
+		dodge_dir.y = 0.0
+	dodge_dir = dodge_dir.normalized()
+	_set_state("dodge")
+	invuln = Balance.HERO_INVULN_DODGE
+	Sfx.play_at("sfx_swing", _sfx_pos(), -10.0, 1.4)
+	return true
+
+
+func _update_attack_phase(windup_end: float, attack_end: float) -> void:
+	if state_t < windup_end:
+		attack_phase = "windup"
+	elif state_t < minf(windup_end + 0.10, attack_end):
+		attack_phase = "active"
+	else:
+		attack_phase = "recovery"
 
 
 func _start_attack() -> void:
@@ -834,6 +871,7 @@ func die() -> void:
 func _set_state(s: String) -> void:
 	state = s
 	state_t = 0.0
+	attack_phase = "windup" if s in ["attack", "heavy"] else ""
 
 
 func _animate(dt: float) -> void:
@@ -1015,8 +1053,8 @@ func _build_anim_tree() -> void:
 		slash_node.timeline_length = slash_len
 		blend_tree.add_node("SlashClip", slash_node)
 		var slash_shot := AnimationNodeOneShot.new()
-		slash_shot.fadein_time = 0.06
-		slash_shot.fadeout_time = 0.12
+		slash_shot.fadein_time = 0.15
+		slash_shot.fadeout_time = 0.15
 		blend_tree.add_node("SlashShot", slash_shot)
 		blend_tree.connect_node("SlashShot", 0, base)
 		blend_tree.connect_node("SlashShot", 1, "SlashClip")
@@ -1033,8 +1071,8 @@ func _build_anim_tree() -> void:
 			roll_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("RollClip", roll_node)
 		var roll_shot := AnimationNodeOneShot.new()
-		roll_shot.fadein_time = 0.06
-		roll_shot.fadeout_time = 0.12
+		roll_shot.fadein_time = 0.15
+		roll_shot.fadeout_time = 0.15
 		blend_tree.add_node("RollShot", roll_shot)
 		blend_tree.connect_node("RollShot", 0, base)
 		blend_tree.connect_node("RollShot", 1, "RollClip")
@@ -1084,16 +1122,20 @@ func _animate_model(dt: float) -> void:
 	var walk_base: float = maxf(walk_speed(), 0.01)
 	var run_base: float = maxf(run_speed(), walk_base)
 	if anim_tree != null:
+		anim_locomotion_blend = move_toward(anim_locomotion_blend,
+			clampf(speed / walk_base, 0.0, 1.0), dt / 0.18)
+		anim_run_blend = move_toward(anim_run_blend,
+			clampf((speed / run_base - walk_base / run_base)
+				/ maxf(1.0 - walk_base / run_base, 0.01), 0.0, 1.0), dt / 0.18)
 		if anim_has_idle_walk_blend:
 			anim_tree.set("parameters/IdleWalk/blend_amount",
-				clampf(speed / walk_base, 0.0, 1.0))
+				anim_locomotion_blend)
 		if anim_has_walk_scale:
 			anim_tree.set("parameters/WalkScale/scale",
 				clampf(speed / walk_base, 0.7, 1.6))
 		if anim_has_walk_run_blend:
-			var walk_ratio: float = clampf(walk_base / run_base, 0.0, 1.0)
 			anim_tree.set("parameters/WalkRun/blend_amount",
-				clampf((speed / run_base - walk_ratio) / maxf(1.0 - walk_ratio, 0.01), 0.0, 1.0))
+				anim_run_blend)
 		if anim_has_run_scale:
 			anim_tree.set("parameters/RunScale/scale",
 				clampf(speed / run_base, 0.7, 1.6))

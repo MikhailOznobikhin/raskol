@@ -16,6 +16,8 @@ var max_hp := 60.0
 var dead := false
 var state := "patrol"
 var state_t := 0.0
+var attack_phase := ""
+var attack_hit_done := false
 var attack_cd := 0.0
 var patrol: Array = []
 var patrol_i := 0
@@ -66,6 +68,7 @@ var anim_has_move_scale := false
 var anim_has_idle_move_blend := false
 var anim_has_attack := false
 var anim_has_death := false
+var anim_locomotion_blend := 0.0
 var anim_death_blend := 0.0
 var anim_was_dead := false
 var active_anim_action := ""
@@ -384,9 +387,15 @@ func _physics_process(delta: float) -> void:
 		"attack":
 			velocity.x = 0.0
 			velocity.z = 0.0
+			if state_t >= 0.35 and attack_phase == "windup":
+				attack_phase = "active"
+				_resolve_attack_hit()
+			elif state_t >= 0.45 and attack_phase == "active":
+				attack_phase = "recovery"
 			if state_t > 0.75:
 				state = "chase"
 				state_t = 0.0
+				attack_phase = ""
 	_apply_gravity(delta)
 	move_and_slide()
 	_animate(delta)
@@ -443,8 +452,12 @@ func _become_suspicious() -> void:
 func _start_chase() -> void:
 	if state != "chase":
 		Sfx.play("sfx_alert", -12.0, 1.0)
+	if state == "attack" and anim_tree != null and anim_has_attack:
+		anim_tree.set("parameters/AttackShot/request",
+			AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
 	state = "chase"
 	state_t = 0.0
+	attack_phase = ""
 	alertness = Balance.GUARD_ALERT_MAX
 	lose_t = 0.0
 
@@ -597,11 +610,15 @@ func _face(dir: Vector3) -> void:
 func _attack() -> void:
 	state = "attack"
 	state_t = 0.0
+	attack_phase = "windup"
+	attack_hit_done = false
 	attack_cd = 1.3
 	Sfx.play_at("sfx_swing", global_position + Vector3(0, 1.1, 0), -10.0, 0.9)
-	await get_tree().create_timer(0.35).timeout
-	if dead or target == null or not is_instance_valid(target):
+
+func _resolve_attack_hit() -> void:
+	if attack_hit_done or dead or target == null or not is_instance_valid(target):
 		return
+	attack_hit_done = true
 	if global_position.distance_to(target.global_position) <= attack_range + 0.6:
 		if target.has_method("take_damage"):
 			target.take_damage(attack_damage, global_position)
@@ -784,8 +801,8 @@ func _build_anim_tree() -> void:
 			attack_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("AttackClip", attack_node)
 		var attack_shot := AnimationNodeOneShot.new()
-		attack_shot.fadein_time = 0.08
-		attack_shot.fadeout_time = 0.12
+		attack_shot.fadein_time = 0.15
+		attack_shot.fadeout_time = 0.15
 		blend_tree.add_node("AttackShot", attack_shot)
 		blend_tree.connect_node("AttackShot", 0, base)
 		blend_tree.connect_node("AttackShot", 1, "AttackClip")
@@ -818,8 +835,10 @@ func _animate_model(dt: float) -> void:
 	if anim_tree != null:
 		if anim_has_idle_move_blend:
 			var move_base: float = chase_speed if state in ["chase", "attack"] else speed
+			anim_locomotion_blend = move_toward(anim_locomotion_blend,
+				clampf(sp / maxf(move_base, 0.01), 0.0, 1.0), dt / 0.18)
 			anim_tree.set("parameters/Locomotion/blend_amount",
-				clampf(sp / maxf(move_base, 0.01), 0.0, 1.0))
+				anim_locomotion_blend)
 		if anim_has_move_scale:
 			anim_tree.set("parameters/MoveScale/scale",
 				clampf(sp / 2.6, 0.8, 1.8))
