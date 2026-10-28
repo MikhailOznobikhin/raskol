@@ -1,4 +1,5 @@
 @echo off
-rem Запуск игры одним кликом: «Кровавая магия и Раскол»
-cd /d "%~dp0build"
-start "" "Raskol.exe" %*
+setlocal
+cd /d "%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1" -Play
+if errorlevel 1 pause
