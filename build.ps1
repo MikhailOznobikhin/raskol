@@ -2,7 +2,10 @@
 # Примеры:
 #   .\build.ps1 -Import            # импорт ресурсов / регистрация классов
 #   .\build.ps1 -Test              # автотест прохождения (headless)
+#   .\build.ps1 -Play              # запустить проект Godot с главной сценой
 #   .\build.ps1 -Shots             # 3 скриншота в tools\shot_3d_*.png
+#   .\build.ps1 -DungeonShots      # геометрия без меню, 9 кадров
+#   .\build.ps1 -KitAssets         # пересборка модулей подземелья
 #   .\build.ps1 -Models            # проверка .glb: скины, клипы, кости оружия
 #   .\build.ps1 -Assets            # регенерация текстур/арт/звука
 #   .\build.ps1 -Export            # полная сборка build\Raskol.exe
@@ -10,7 +13,10 @@
 param(
     [switch]$Import,
     [switch]$Test,
+    [switch]$Play,
     [switch]$Shots,
+    [switch]$DungeonShots,
+    [switch]$KitAssets,
     [switch]$Models,
     [switch]$Assets,
     [switch]$Export
@@ -32,10 +38,10 @@ if (-not (Test-Path $env:TMP)) { New-Item -ItemType Directory -Path $env:TMP | O
 
 # Godot пишет часть лога в stderr; с EAP='Stop' PowerShell падает на любой строке,
 # поэтому для нативных вызовов сравниваем не stderr, а код возврата.
-function G([string[]]$Args) {
+function G([string[]]$GodotArgs) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    & $godot @Args 2>&1 | Out-Host
+    & $godot @GodotArgs 2>&1 | Out-Host
     $ErrorActionPreference = $prev
     if ($LASTEXITCODE -ne 0) { throw "Godot вернул код $LASTEXITCODE" }
 }
@@ -61,6 +67,12 @@ if ($Assets) {
     & $py (Join-Path $ws 'src\audio\build_audio_samples.py')
     if ($LASTEXITCODE -ne 0) { throw 'Генераторы ассетов упали' }
     Write-Host '[OK] Ассеты перегенерированы' -ForegroundColor Green
+}
+
+if ($KitAssets) {
+    & $py (Join-Path $ws 'src\build_dungeon_kit.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Сборка набора подземелья не пройдена' }
+    Write-Host '[OK] Набор подземелья пересобран' -ForegroundColor Green
 }
 
 if ($Import) {
@@ -89,6 +101,12 @@ if ($Test) {
     } else {
         throw 'Автотест НЕ зелёный (ожидание: "TEST DONE escaped=true"). Лог: tools\last_test.log'
     }
+}
+
+if ($Play) {
+    $game = Start-Process -FilePath $godot -ArgumentList @('--path', $ws) `
+        -WorkingDirectory $ws -PassThru
+    Write-Host "[OK] Игра запущена (PID: $($game.Id))" -ForegroundColor Green
 }
 
 if ($Shots) {
@@ -133,6 +151,35 @@ if ($Shots) {
     Write-Host "[OK] Скриншоты: tools\shot_3d_*.png (кадров: $shotCount)" -ForegroundColor Green
 }
 
+if ($DungeonShots) {
+    $jobStart = Get-Date
+    $job = Start-Job -ScriptBlock {
+        param($g, $ws)
+        $env:APPDATA = Join-Path $ws 'tools\appdata'
+        $env:LOCALAPPDATA = Join-Path $ws 'tools\localappdata'
+        $env:TEMP = Join-Path $ws 'tools\temp'
+        & $g --path $ws --resolution 1280x720 --script res://tools/dungeon_shots.gd 2>&1
+    } -ArgumentList $godot, $ws
+    $done = Wait-Job $job -Timeout 180
+    $out = (Receive-Job $job | Out-String)
+    Remove-Job $job -Force
+    if ($null -eq $done) {
+        foreach ($proc in @(Get-Process | Where-Object { $_.ProcessName -like 'Godot_v4.4.1*' })) {
+            try {
+                if ($proc.StartTime -gt $jobStart) { Stop-Process -Id $proc.Id -Force }
+            } catch { }
+        }
+        $out += "`nDungeon shots watchdog: 180 с превышены, процесс Godot остановлен`n"
+    }
+    $out | Set-Content -Path (Join-Path $ws 'tools\last_dungeon_shots.log') -Encoding UTF8
+    Write-Host $out
+    $shotCount = ([regex]::Matches($out, '(?m)^GEO shot ')).Count
+    if ($shotCount -ne 9 -or $out -notmatch 'GEO done' -or $out -match 'SCRIPT ERROR') {
+        throw "Изолированные кадры подземелья не сняты (кадров: $shotCount). Лог: tools\last_dungeon_shots.log"
+    }
+    Write-Host "[OK] Изолированные кадры подземелья: $shotCount" -ForegroundColor Green
+}
+
 if ($Export) {
     $exe = Join-Path $ws 'build\Raskol.exe'
     # Экспорт молча выходил с кодом 0, оставляя на диске вчерашний exe:
@@ -157,6 +204,6 @@ if ($Export) {
     Write-Host "[OK] build\Raskol.exe собран ($mb МБ, $after)" -ForegroundColor Green
 }
 
-if (-not ($Import -or $Test -or $Shots -or $Models -or $Assets -or $Export)) {
-    Write-Host 'Укажи хотя бы один флаг: -Import | -Test | -Shots | -Models | -Assets | -Export (см. header файла)'
+if (-not ($Import -or $Test -or $Play -or $Shots -or $DungeonShots -or $KitAssets -or $Models -or $Assets -or $Export)) {
+    Write-Host 'Укажи хотя бы один флаг: -Import | -Test | -Play | -Shots | -DungeonShots | -KitAssets | -Models | -Assets | -Export (см. header файла)'
 }

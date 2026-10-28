@@ -150,15 +150,8 @@ def offset_part(part, d):
     return part
 
 
-def clip_axis(part, axis, lo, hi, cap=True, end_axis_value=None, end_axis_axis=0):
-    """Обрезает меш по плоскостям axis=lo и axis=hi, зашивая открытые срезы.
-
-    Треугольники режутся полигональным отсечением с интерполяцией нормалей и
-    UV, затем на каждой плоскости среза ищутся открытые (принадлежащие одному
-    треугольнику) рёбра, сшиваются в контуры и зашиваются веером. UV заглушки
-    считаются аффинным отображением по торцу модуля (end_axis_value) — иначе
-    срез остаётся чёрной дырой.
-    """
+def clip_axis(part, axis, lo, hi):
+    """Обрезает меш плоскостями axis=lo/hi без заглушек на открытых торцах."""
     pos, nor, uv = part['pos'], part['nor'], part['uv']
     idx = part['idx'].reshape(-1, 3)
     planes = []
@@ -196,126 +189,7 @@ def clip_axis(part, axis, lo, hi, cap=True, end_axis_value=None, end_axis_axis=0
            'nor': np.array(out_nor, dtype=np.float64).reshape(-1, 3),
            'uv': np.array(out_uv, dtype=np.float64).reshape(-1, 2),
            'idx': np.arange(len(out_pos), dtype=np.int64), 'mat': part['mat']}
-    # Склейка до зашивки: в исходнике вершины на плоскости среза продублированы,
-    # контуры из таких рёбер не собираются в петлю, и один из торцов модуля
-    # оставался открытым — в кадре это чёрный зазубренный силуэт у косяков.
-    res = weld(res)
-    if cap:
-        for value, keep_ge in planes:
-            sign = -1.0 if keep_ge else 1.0
-            caps = _cap_plane(res, axis, value, sign, part, end_axis_value, end_axis_axis)
-            if caps['pos'].size:
-                res = merge_parts(res, caps)
-    return res
-
-
-def _cap_plane(part, axis, value, sign, src, end_axis_value, end_axis_axis):
-    """Зашивает срез в плоскости axis=value по открытым рёбрам."""
-    pos = part['pos']
-    idx = part['idx'].reshape(-1, 3)
-    key = [tuple(np.round(p, 5)) for p in pos]
-    edges = {}
-    for t in idx:
-        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
-            e = (a, b) if key[a] <= key[b] else (b, a)
-            edges[e] = edges.get(e, 0) + 1
-    open_edges = [e for e, cnt in edges.items() if cnt == 1]
-    on_plane = [e for e in open_edges if abs(pos[e[0]][axis] - value) < 1e-4
-                and abs(pos[e[1]][axis] - value) < 1e-4]
-    if not on_plane:
-        return {'pos': np.zeros((0, 3)), 'nor': np.zeros((0, 3)),
-                'uv': np.zeros((0, 2)), 'idx': np.zeros(0, dtype=np.int64), 'mat': part['mat']}
-    # сшиваем рёбра в контуры
-    nxt = {}
-    for a, b in on_plane:
-        nxt.setdefault(a, []).append(b)
-        nxt.setdefault(b, []).append(a)
-    loops = []
-    seen = set()
-    for start in list(nxt.keys()):
-        if start in seen:
-            continue
-        loop = [start]
-        seen.add(start)
-        cur = start
-        while True:
-            cands = [x for x in nxt.get(cur, []) if x not in seen]
-            if not cands:
-                break
-            cur = cands[0]
-            seen.add(cur)
-            loop.append(cur)
-        if len(loop) >= 3:
-            loops.append(loop)
-    out_pos, out_nor, out_uv, out_idx = [], [], [], []
-    normal = _axis_normal(axis, sign)
-    for loop in loops:
-        ctr = pos[loop].mean(0)
-        base = len(out_pos)
-        pts = [pos[i] for i in loop]
-        n = len(pts)
-        # ориентация контура: считаем знак площади в плоскости среза
-        u_axis = [a for a in range(3) if a != axis]
-        area = 0.0
-        for k in range(n):
-            a, b = pts[k], pts[(k + 1) % n]
-            area += (a[u_axis[0]] * b[u_axis[1]] - b[u_axis[0]] * a[u_axis[1]])
-        ccw = area > 0
-        for k in range(n):
-            out_pos.append(pts[k])
-            out_nor.append(normal)
-            out_uv.append(_map_end_uv(src, end_axis_value, pts[k], end_axis_axis))
-        out_pos.append(ctr)
-        out_nor.append(normal)
-        out_uv.append(_map_end_uv(src, end_axis_value, ctr, end_axis_axis))
-        c_i = base + n
-        # веер: контур среза почти всегда выпуклый
-        for k in range(n):
-            a_i, b_i = base + k, base + (k + 1) % n
-            if ccw:
-                out_idx += [c_i, a_i, b_i]
-            else:
-                out_idx += [c_i, b_i, a_i]
-    return {'pos': np.array(out_pos, dtype=np.float64).reshape(-1, 3),
-            'nor': np.array(out_nor, dtype=np.float64).reshape(-1, 3),
-            'uv': np.array(out_uv, dtype=np.float64).reshape(-1, 2),
-            'idx': np.array(out_idx, dtype=np.int64), 'mat': part['mat']}
-
-
-def _axis_normal(axis, sign):
-    n = np.zeros(3)
-    n[axis] = sign
-    return n
-
-
-def _map_end_uv(part, end_axis_value, p, end_axis_axis=0):
-    """UV точки среза — аффинным отображением по торцу модуля.
-
-    Отображение экстраполирует UV торца на весь срез, поэтому попадает и в
-    пустые (белые) области атласа: срез кладки на кадре читался светлым
-    листом. Полученные UV зажимаем в охват UV самого модуля — там только
-    кирпич.
-    """
-    umin, vmin, umax, vmax = uv_bounds(part)
-
-    def clamp(uvq):
-        return np.array([min(max(float(uvq[0]), umin), umax),
-                         min(max(float(uvq[1]), vmin), vmax)])
-
-    if end_axis_value is None:
-        return clamp([part['uv'][:, 0].mean(), part['uv'][:, 1].mean()])
-    idx = part['idx'].reshape(-1, 3)
-    pos, uv = part['pos'], part['uv']
-    sel = np.all(np.abs(pos[idx][:, :, end_axis_axis] - end_axis_value) < 5e-3, axis=1)
-    if sel.sum() < 3:
-        return clamp([uv[:, 0].mean(), uv[:, 1].mean()])
-    verts = idx[sel].reshape(-1)
-    others = [a for a in range(3) if a != end_axis_axis]
-    yz = pos[verts][:, others]
-    uvq = uv[verts]
-    a = np.hstack([yz, np.ones((len(yz), 1))])
-    sol, *_ = np.linalg.lstsq(a, uvq, rcond=None)
-    return clamp(np.array([p[others[0]], p[others[1]], 1.0]) @ sol)
+    return weld(res)
 
 
 def merge_parts(*parts):
@@ -552,13 +426,16 @@ def build_modules(glb, flatten=False):
     wall['uv'] = wall['uv'].copy()
     if flatten:
         flatten_relief(wall, (0, 0, 0.0), (0, 0, 1), 1.2)
-    mods['wall_4m'] = [weld(clip_axis(wall, 0, -2.0, 2.0, True, -2.084))]
-    mods['wall_2m'] = [weld(clip_axis(wall, 0, -1.0, 1.0, True, -2.084))]
+    # Не зашиваем срез веером: сечение свода вогнутое, и веер создаёт
+    # большие плоские треугольники поверх уровня. Соседние пролёты стыкуются
+    # срезами, а открытый торец не перекрывает видимую кладку.
+    mods['wall_4m'] = [weld(clip_axis(wall, 0, -2.0, 2.0))]
+    mods['wall_2m'] = [weld(clip_axis(wall, 0, -1.0, 1.0))]
 
     # --- проём с аркой: длина модуля переезжает на x, лицо на z=0 ---
     arch = glb.part('Brick_wall_doorway_BRICKWALLS_0')
     transform(arch, translate(4.0, 0, 0.005) @ rot_y90())
-    mods['arch_2m'] = [weld(clip_axis(arch, 0, -1.0, 1.0, True, -2.084))]
+    mods['arch_2m'] = [weld(clip_axis(arch, 0, -1.0, 1.0))]
 
     # --- пол: клетка 4×4 м, верхняя поверхность на y=0 ---
     floor = glb.part('Tile_floor_Tile_Floor_0')
