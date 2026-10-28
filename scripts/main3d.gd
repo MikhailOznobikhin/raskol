@@ -592,6 +592,25 @@ func _test_mode() -> void:
 	await get_tree().create_timer(2.2).timeout
 	print("TEST seen state=", g.state, " alert=", snappedf(g.alertness, 1.0),
 		" light=", snappedf(g.hero_light, 1.0))
+	g._attack()
+	g._update_attack_telegraph()
+	var attack_tell_visible: bool = g.attack_tell.visible
+	g.attack_phase = "active"
+	g._update_attack_telegraph()
+	var attack_tell_hidden: bool = not g.attack_tell.visible
+	g._start_chase()
+	var boss_tell := Enemy3D.new()
+	boss_tell.setup("boss")
+	var boss_windup: float = boss_tell._attack_windup_duration()
+	boss_tell.free()
+	if not attack_tell_visible or not attack_tell_hidden \
+			or boss_windup <= g._attack_windup_duration():
+		print("TEST FAIL: телеграф атаки не совпадает с фазами или таймингами")
+	else:
+		print("TEST attack telegraph visible=", attack_tell_visible,
+			" hidden_on_strike=", attack_tell_hidden,
+			" guard_windup=", g._attack_windup_duration(),
+			" boss_windup=", boss_windup)
 
 	# кровавый шип (Q): цена магии, откат и урон снарядом
 	GameState.add_magic(30.0)

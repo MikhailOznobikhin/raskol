@@ -8,6 +8,10 @@ signal died(enemy)
 const BAR_WIDTH := 1.12
 const BAR_FILL_WIDTH := 0.96
 const BAR_MIN_SCALE := 0.12
+const GUARD_ATTACK_WINDUP := 0.50
+const BOSS_ATTACK_WINDUP := 0.62
+const ATTACK_ACTIVE_DURATION := 0.12
+const ATTACK_RECOVERY_DURATION := 0.30
 
 var is_boss := false
 var xp_reward := Balance.XP_GUARD
@@ -51,6 +55,7 @@ var leg_r: Node3D
 var bar_fill: MeshInstance3D
 var bar_bg: MeshInstance3D
 var bar_anchor_y := 0.0
+var attack_tell: Label3D
 var mat_cloth: StandardMaterial3D
 var mat_skin: StandardMaterial3D
 var mat_metal: StandardMaterial3D
@@ -112,6 +117,7 @@ func _ready() -> void:
 	_build_rig()
 	_attach_model()
 	_build_bar()
+	_build_attack_telegraph()
 	_update_health_bar()
 	_build_hurtbox()
 	_add_blob_shadow(0.5 if not is_boss else 0.9)
@@ -313,6 +319,40 @@ func _update_health_bar() -> void:
 	bar_bg.visible = not dead and not (calm and ratio > 0.999)
 
 
+func _attack_windup_duration() -> float:
+	return BOSS_ATTACK_WINDUP if is_boss else GUARD_ATTACK_WINDUP
+
+
+func _attack_duration() -> float:
+	return _attack_windup_duration() + ATTACK_ACTIVE_DURATION + ATTACK_RECOVERY_DURATION
+
+
+func _build_attack_telegraph() -> void:
+	attack_tell = Label3D.new()
+	attack_tell.name = "AttackTell"
+	attack_tell.text = "!"
+	attack_tell.font_size = 72 if not is_boss else 96
+	attack_tell.pixel_size = 0.0065
+	attack_tell.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	attack_tell.modulate = Color(1.0, 0.12, 0.035, 0.9)
+	attack_tell.outline_size = 12
+	attack_tell.position = Vector3(0, bar_anchor_y + 0.34, 0)
+	attack_tell.visible = false
+	add_child(attack_tell)
+
+
+func _update_attack_telegraph() -> void:
+	if attack_tell == null:
+		return
+	var warning := not dead and state == "attack" and attack_phase == "windup"
+	attack_tell.visible = warning
+	if warning:
+		var pulse: float = 0.5 + 0.5 * sin(state_t * TAU * 3.0)
+		attack_tell.modulate.a = 0.72 + pulse * 0.28
+		var tell_scale: float = 0.94 + pulse * 0.12
+		attack_tell.scale = Vector3.ONE * tell_scale
+
+
 func _physics_process(delta: float) -> void:
 	state_t += delta
 	bark_cd = max(0.0, bark_cd - delta)
@@ -320,6 +360,7 @@ func _physics_process(delta: float) -> void:
 	flash = max(0.0, flash - delta)
 	stagger_t = max(0.0, stagger_t - delta)
 	_update_health_bar()
+	_update_attack_telegraph()
 	if dead:
 		# труп не должен скользить: гасим остаток скорости погони/отдачи,
 		# иначе move_and_slide() продолжает тащить тело по полу.
@@ -387,12 +428,13 @@ func _physics_process(delta: float) -> void:
 		"attack":
 			velocity.x = 0.0
 			velocity.z = 0.0
-			if state_t >= 0.35 and attack_phase == "windup":
+			var windup: float = _attack_windup_duration()
+			if state_t >= windup and attack_phase == "windup":
 				attack_phase = "active"
 				_resolve_attack_hit()
-			elif state_t >= 0.45 and attack_phase == "active":
+			elif state_t >= windup + ATTACK_ACTIVE_DURATION and attack_phase == "active":
 				attack_phase = "recovery"
-			if state_t > 0.75:
+			if state_t > _attack_duration():
 				state = "chase"
 				state_t = 0.0
 				attack_phase = ""
@@ -613,7 +655,8 @@ func _attack() -> void:
 	attack_phase = "windup"
 	attack_hit_done = false
 	attack_cd = 1.3
-	Sfx.play_at("sfx_swing", global_position + Vector3(0, 1.1, 0), -10.0, 0.9)
+	Sfx.play_at("sfx_swing", global_position + Vector3(0, 1.1, 0), -8.0,
+		0.82 if is_boss else 0.98)
 
 func _resolve_attack_hit() -> void:
 	if attack_hit_done or dead or target == null or not is_instance_valid(target):
@@ -730,8 +773,18 @@ func _animate(dt: float) -> void:
 			Sfx.play_at_varied("sfx_step", global_position, -22.0 if hunting else -28.0)
 		set_meta("step_t", st)
 	if state == "attack":
-		var t: float = clampf(state_t / 0.35, 0.0, 1.0)
-		arm_r.rotation.x = lerp(-1.8, 0.6, t)
+		var windup: float = _attack_windup_duration()
+		if attack_phase == "windup":
+			var prep: float = clampf(state_t / windup, 0.0, 1.0)
+			arm_r.rotation.x = lerpf(0.0, -2.2, prep)
+		elif attack_phase == "active":
+			var strike: float = clampf((state_t - windup) / ATTACK_ACTIVE_DURATION, 0.0, 1.0)
+			arm_r.rotation.x = lerpf(-2.2, 0.8, strike)
+		else:
+			var recovery: float = clampf(
+				(state_t - windup - ATTACK_ACTIVE_DURATION) / ATTACK_RECOVERY_DURATION,
+				0.0, 1.0)
+			arm_r.rotation.x = lerpf(0.8, 0.0, recovery)
 	else:
 		arm_r.rotation.x = lerp(arm_r.rotation.x, 0.0, dt * 8.0)
 	if flash > 0.0 and mat_cloth:
@@ -795,8 +848,7 @@ func _build_anim_tree() -> void:
 		attack_node.use_custom_timeline = true
 		attack_node.stretch_time_scale = true
 		var attack_anim: Animation = anim.get_animation(attack)
-		var attack_len: float = attack_anim.length if attack_anim != null else 0.72
-		attack_node.timeline_length = attack_len / 1.3
+		attack_node.timeline_length = _attack_duration()
 		if attack_anim != null:
 			attack_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("AttackClip", attack_node)
