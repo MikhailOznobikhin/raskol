@@ -41,6 +41,8 @@ func _ready() -> void:
 		view.item_stack_changed.connect(_on_stack_count_changed)
 		view.item_stack_selected.connect(_on_item_selected)
 		view.item_stack_deselected.connect(_on_item_deselected)
+		if not view.item_stack_gui_input.is_connected(_on_item_gui_input):
+			view.item_stack_gui_input.connect(_on_item_gui_input)
 	action_button.pressed.connect(_on_action_pressed)
 	sort_button.pressed.connect(_on_sort_pressed)
 	close_button.pressed.connect(request_close)
@@ -189,6 +191,42 @@ func _on_item_deselected(item_view: ItemStackView) -> void:
 		_active_view = null
 		_refresh_action()
 
+
+func _on_item_gui_input(event: InputEvent, item_view: ItemStackView) -> void:
+	var mb := event as InputEventMouseButton
+	if mb == null or not mb.pressed:
+		return
+	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.double_click:
+		return
+	var grabbed := GrabbedItemStackView.get_instance()
+	if grabbed != null and grabbed.stack != null:
+		return
+	var stack := item_view.stack
+	if stack == null:
+		return
+	var kind := String(stack.extra_properties.get("kind", ""))
+	if kind == "use":
+		var id := String(stack.item_type.resource_name)
+		if GameState.use_item(id):
+			_loading = true
+			bag_view.inventory.clear()
+			equip_view.inventory.clear()
+			_leftovers.clear()
+			_load_from_game_state()
+			_loading = false
+			_flush()
+		_refresh_action()
+		get_viewport().set_input_as_handled()
+		return
+	if kind == "equip":
+		var source := item_view.get_parent()
+		while source != null and not (source is InventoryView):
+			source = source.get_parent()
+		if source is InventoryView:
+			source._quick_transfer_anywhere(item_view)
+		_refresh_action()
+		get_viewport().set_input_as_handled()
+		return
 
 func _active_stack() -> ItemStack:
 	if _active_view == null or not is_instance_valid(_active_view):
