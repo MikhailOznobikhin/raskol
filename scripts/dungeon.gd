@@ -59,6 +59,7 @@ var mat_dark: StandardMaterial3D
 var mat_glow: StandardMaterial3D
 var mat_flame: StandardMaterial3D
 var mat_flame_core: StandardMaterial3D
+var mat_puddle_water: StandardMaterial3D
 ## Ткань знамён: двусторонняя, иначе с обратной стороны видна чёрная заглушка.
 var mat_banner: StandardMaterial3D
 ## Светлый тёсаный камень: плинт и карниз.
@@ -72,6 +73,7 @@ var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
 ## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
 var _grime_cache := {}
+var water_ripples: Array[Dictionary] = []
 ## Модули набора: имя → Mesh, и материалы glTF (albedo+normal+roughness).
 var kit: Dictionary = {}
 var kit_ok := false
@@ -272,6 +274,7 @@ func _materials() -> void:
 	mat_dark = StandardMaterial3D.new()
 	mat_dark.albedo_color = Color(0.05, 0.05, 0.06)
 	mat_dark.roughness = 0.95
+	mat_puddle_water = _water_material()
 	mat_banner = StandardMaterial3D.new()
 	mat_banner.albedo_texture = _banner_texture()
 	mat_banner.roughness = 0.9
@@ -305,6 +308,32 @@ func _materials() -> void:
 	mat_flame_core.emission_energy_multiplier = 4.2
 	mat_flame_core.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_flame_core.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+
+func _water_material() -> StandardMaterial3D:
+	var size := 128
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var uv := Vector2(float(x) / float(size) * 2.0 - 1.0,
+				float(y) / float(size) * 2.0 - 1.0)
+			var angle := atan2(uv.y, uv.x)
+			var edge := 1.0 + 0.06 * sin(angle * 5.0) + 0.035 * sin(angle * 11.0 + 1.2)
+			var radius := uv.length()
+			var alpha := clampf((edge - radius) * 12.0, 0.0, 0.78)
+			var ripple := sin(radius * 52.0 + sin(angle * 4.0) * 1.7)
+			var color := Color(0.28 + ripple * 0.06, 0.46 + ripple * 0.08,
+				0.54 + ripple * 0.09, alpha)
+			img.set_pixel(x, y, color)
+	var water_texture := ImageTexture.create_from_image(img)
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = water_texture
+	material.albedo_color = Color(0.84, 0.92, 0.96, 0.92)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.metallic = 0.28
+	material.roughness = 0.12
+	material.metallic_specular = 0.8
+	return material
 
 
 func _load_map() -> void:
@@ -670,6 +699,41 @@ func _build_ceiling() -> void:
 	add_child(mi)
 
 
+func _build_ribs() -> void:
+	var parts: Array[Transform3D] = []
+	for y in map_h:
+		for x in map_w:
+			if grid[y][x] or int(dist[y][x]) != 1:
+				continue
+			if (x * 5 + y * 3) % 4 != 0:
+				continue
+			var ns: bool = is_wall(x, y - 1) and is_wall(x, y + 1)
+			var ew: bool = is_wall(x - 1, y) and is_wall(x + 1, y)
+			if not ns and not ew:
+				continue
+			var span: Vector3 = Vector3(0, 0, 1) if ns else Vector3(1, 0, 0)
+			var h: float = ceil_h[y][x]
+			var center := Vector3((x + 0.5) * T, h - 0.78, (y + 0.5) * T)
+			var tangent: Vector3 = span.cross(Vector3.UP)
+			for i in 17:
+				var angle: float = lerpf(0.0, PI, i / 16.0)
+				var radial := span * cos(angle) + Vector3.UP * sin(angle)
+				var depth: Vector3 = tangent.cross(radial)
+				parts.append(Transform3D(
+					Basis(tangent, radial, depth).scaled(Vector3(0.3, 0.22, 0.34)),
+					center + span * (cos(angle) * T * 0.5) + Vector3.UP * (sin(angle) * 0.62)))
+	if parts.is_empty():
+		return
+	var box := BoxMesh.new()
+	box.size = Vector3.ONE
+	var instance := _multimesh(box, parts.size(), mat_cap)
+	for i in parts.size():
+		instance.multimesh.set_instance_transform(i, parts[i])
+		var arch_index: int = i / 17
+		var shade: float = float((arch_index * 7919) % 100) / 100.0
+		instance.multimesh.set_instance_color(i, Color(0.9, 0.87, 0.82).darkened(shade * 0.16))
+
+
 ## Обнажена ли грань клетки-стены наружу — в том числе у столба.
 func _exposed(x: int, y: int, d: Vector2i) -> bool:
 	if not _in(x, y) or not grid[y][x] or pier[y][x]:
@@ -1029,13 +1093,13 @@ func _build_environment() -> void:
 	# Холодный заполняющий ambient: синеватый цвет контрастирует с тёплыми
 	# факелами и вытаскивает кладку из черноты, не трогая альбедо текстур.
 	env.ambient_light_color = Color(0.34, 0.42, 0.56)
-	env.ambient_light_energy = 0.4
+	env.ambient_light_energy = 0.48
 	# ACES — кинематографичный тон-маппинг, как в меню игры.
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.45
+	env.tonemap_exposure = 1.35
 	env.glow_enabled = true
-	env.glow_intensity = 0.34
-	env.glow_bloom = 0.05
+	env.glow_intensity = 0.26
+	env.glow_bloom = 0.035
 	env.glow_hdr_threshold = 1.1
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.085, 0.09, 0.115)
@@ -1060,16 +1124,16 @@ func _build_environment() -> void:
 	env.volumetric_fog_anisotropy = 0.45
 	env.volumetric_fog_length = 40.0
 	env.adjustment_enabled = true
-	env.adjustment_brightness = 1.08
-	env.adjustment_contrast = 1.1
-	env.adjustment_saturation = 0.98
+	env.adjustment_brightness = 1.04
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 0.88
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	# холодный заполняющий свет: без него коридор утопает в красно-коричневом
 	var fill := DirectionalLight3D.new()
 	fill.light_color = Color(0.58, 0.66, 0.86)
-	fill.light_energy = 0.42
+	fill.light_energy = 0.5
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-55.0, 32.0, 0.0)
 	add_child(fill)
@@ -1173,7 +1237,7 @@ func _add_grime_decals() -> void:
 	var moss_n := 0
 	for y in range(1, map_h - 1):
 		for x in range(1, map_w - 1):
-			if moss_n >= 7:
+			if moss_n >= 9:
 				break
 			if grid[y][x] or (x * 11 + y * 17) % 29 != 0:
 				continue
@@ -1185,6 +1249,33 @@ func _add_grime_decals() -> void:
 			p.y = 0.35
 			_decal(p, n, Vector3(1.6, 0.45, 1.2), moss, Color(1, 1, 1, 0.65))
 			moss_n += 1
+
+	var floor_moss_n := 0
+	var floor_moss_material := StandardMaterial3D.new()
+	floor_moss_material.albedo_texture = moss
+	floor_moss_material.albedo_color = Color(0.9, 1.0, 0.72, 0.92)
+	floor_moss_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	floor_moss_material.roughness = 0.95
+	var focal_moss := [
+		Vector3(19.0, 0.0, 58.0),
+		Vector3(43.0, 0.0, 46.0),
+		Vector3(103.0, 0.0, 35.0),
+	]
+	for pos in focal_moss:
+		var cell := _nearest_open_cell(pos)
+		var p := cell_center(cell.x, cell.y) + Vector3(0, 0.04, 0)
+		_moss_patch(p, Vector2(1.7, 1.45), floor_moss_material)
+		floor_moss_n += 1
+	for y in range(1, map_h - 1):
+		for x in range(1, map_w - 1):
+			if floor_moss_n >= 10:
+				break
+			if grid[y][x] or int(dist[y][x]) > 2 or (x * 13 + y * 23) % 31 != 0:
+				continue
+			var p := cell_center(x, y) + Vector3(0, 0.04, 0)
+			_decal(p, Vector3.UP, Vector3(1.5, 0.24, 1.25), moss,
+				Color(0.82, 1.0, 0.68, 0.8))
+			floor_moss_n += 1
 
 	var wet_n := 0
 	for y in range(1, map_h - 1):
@@ -1235,6 +1326,17 @@ func _decal(pos: Vector3, normal: Vector3, size_v: Vector3, tex: Texture2D,
 	add_child(d)
 
 
+func _moss_patch(pos: Vector3, size_v: Vector2, material: Material) -> void:
+	var mesh := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = size_v
+	mesh.mesh = plane
+	mesh.material_override = material
+	mesh.position = pos
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mesh)
+
+
 ## Мягкое пятно с неровным краем: копоть, мох или сырость.
 func _grime_texture(kind: String) -> Texture2D:
 	if _grime_cache.has(kind):
@@ -1256,7 +1358,7 @@ func _grime_texture(kind: String) -> Texture2D:
 			if kind == "soot":
 				c = Color(0.03, 0.02, 0.015, a * 0.85)
 			elif kind == "moss":
-				c = Color(0.1, 0.14, 0.06, a * 0.7)
+				c = Color(0.2, 0.28, 0.08, a * 0.85)
 			img.set_pixel(x, y, c)
 	var tex := ImageTexture.create_from_image(img)
 	_grime_cache[kind] = tex
@@ -1290,6 +1392,16 @@ func _cyl(r: float, h: float, pos: Vector3, mat: Material, parent: Node3D = null
 	m.position = pos
 	(parent if parent else self).add_child(m)
 	return m
+
+
+func _prism(r: float, h: float) -> CylinderMesh:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = r
+	mesh.bottom_radius = r
+	mesh.height = maxf(h, 0.05)
+	mesh.radial_segments = 8
+	mesh.rings = 1
+	return mesh
 
 
 func _sphere(r: float, pos: Vector3, mat: Material, parent: Node3D = null) -> MeshInstance3D:
@@ -1516,13 +1628,13 @@ func _brazier_prop(pos: Vector3) -> void:
 	flame.add_child(core)
 	flames.append(flame)
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.5, 0.2)
-	light.light_energy = 3.7
-	light.omni_range = 9.0
+	light.light_color = Color(1.0, 0.69, 0.43)
+	light.light_energy = 3.0
+	light.omni_range = 8.5
 	light.shadow_enabled = true
 	light.position = Vector3(0, 1.35, 0)
 	root.add_child(light)
-	lights.append({"light": light, "base": 3.7, "seed": randf() * 10.0, "flame": flame})
+	lights.append({"light": light, "base": 3.0, "seed": randf() * 10.0, "flame": flame})
 
 
 ## Ткань знамени: простая процедурная текстура с каймой и ромбом. Одна
@@ -1632,15 +1744,15 @@ func _torch(pos: Vector3) -> void:
 	flames.append(flame)
 
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.62, 0.28)
-	light.light_energy = 4.0
-	light.omni_range = 12.0
+	light.light_color = Color(1.0, 0.76, 0.54)
+	light.light_energy = 3.2
+	light.omni_range = 10.5
 	light.omni_attenuation = 1.0
 	light.shadow_enabled = true
 	# лампа выше языка пламени: так свет не оказывается внутри меша
 	light.position = Vector3(0, 2.42, 0)
 	root.add_child(light)
-	lights.append({"light": light, "base": 4.0, "seed": randf() * 10.0, "flame": flame})
+	lights.append({"light": light, "base": 3.2, "seed": randf() * 10.0, "flame": flame})
 
 
 ## Освещённость точки (0…100) с учётом затухания и стен между светом и точкой.
@@ -1813,13 +1925,13 @@ func _prop(type: String, pos: Vector3) -> void:
 			var coals := _sphere(0.25, pos + Vector3(0, 1.75, 0), mat_glow)
 			coals.scale = Vector3(1, 0.4, 1)
 			var light := OmniLight3D.new()
-			light.light_color = Color(1.0, 0.5, 0.2)
-			light.light_energy = 3.6
-			light.omni_range = 9.0
+			light.light_color = Color(1.0, 0.69, 0.43)
+			light.light_energy = 2.8
+			light.omni_range = 8.5
 			light.shadow_enabled = true
 			light.position = pos + Vector3(0, 1.9, 0)
 			add_child(light)
-			lights.append({"light": light, "base": 3.6, "seed": randf() * 10.0, "flame": coals})
+			lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": coals})
 		"weapon_rack":
 			_box(Vector3(1.6, 0.1, 0.3), pos + Vector3(0, 1.2, 0), mat_wood)
 			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_wood)
@@ -1827,18 +1939,38 @@ func _prop(type: String, pos: Vector3) -> void:
 			for i in 3:
 				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
 		"puddle":
+			var puddle := Node3D.new()
+			puddle.position = pos + Vector3(0, 0.025, 0)
+			add_child(puddle)
 			var q := MeshInstance3D.new()
 			var pm := PlaneMesh.new()
-			pm.size = Vector2(1.6, 1.2)
+			pm.size = Vector2(2.2, 1.7)
 			q.mesh = pm
-			var m := StandardMaterial3D.new()
-			m.albedo_color = Color(0.12, 0.18, 0.25, 0.6)
-			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			m.roughness = 0.1
-			m.metallic = 0.2
-			q.material_override = m
-			q.position = pos + Vector3(0, 0.02, 0)
-			add_child(q)
+			q.material_override = mat_puddle_water
+			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			puddle.add_child(q)
+
+			var ripple_mesh := TorusMesh.new()
+			ripple_mesh.inner_radius = 0.19
+			ripple_mesh.outer_radius = 0.22
+			ripple_mesh.rings = 32
+			ripple_mesh.ring_segments = 6
+			var ripple := MeshInstance3D.new()
+			ripple.mesh = ripple_mesh
+			ripple.position.y = 0.012
+			ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var ripple_mat := StandardMaterial3D.new()
+			ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
+			ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			ripple_mat.metallic = 0.15
+			ripple_mat.roughness = 0.2
+			ripple.material_override = ripple_mat
+			puddle.add_child(ripple)
+			water_ripples.append({
+				"mesh": ripple,
+				"material": ripple_mat,
+				"seed": randf(),
+			})
 		_:
 			pass
 
@@ -1864,6 +1996,14 @@ func _build_props() -> void:
 
 func _process(delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
+	for ripple_entry in water_ripples:
+		var phase := fposmod(t * 0.22 + float(ripple_entry["seed"]), 1.0)
+		var ripple: MeshInstance3D = ripple_entry["mesh"]
+		var ripple_mat: StandardMaterial3D = ripple_entry["material"]
+		ripple.scale = Vector3(0.45 + phase * 1.05, 1.0, 0.38 + phase * 0.82)
+		var ripple_color := ripple_mat.albedo_color
+		ripple_color.a = (1.0 - phase) * 0.32
+		ripple_mat.albedo_color = ripple_color
 	for l in lights:
 		var s: float = l["seed"]
 		var base: float = l["base"]
@@ -1932,14 +2072,14 @@ func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
 	flame.add_child(core)
 	flames.append(flame)
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.62, 0.28)
-	light.light_energy = 3.9
-	light.omni_range = 11.0
+	light.light_color = Color(1.0, 0.76, 0.54)
+	light.light_energy = 3.1
+	light.omni_range = 10.0
 	light.omni_attenuation = 1.0
 	light.shadow_enabled = shadows
 	light.position = Vector3(0.0, 1.42, 0.3)
 	root.add_child(light)
-	lights.append({"light": light, "base": 3.9, "seed": randf() * 10.0})
+	lights.append({"light": light, "base": 3.1, "seed": randf() * 10.0})
 	return true
 
 
@@ -2005,10 +2145,14 @@ func _dress_rooms() -> void:
 		"brazier_stand": [Vector3(9, 0, 54)],
 		"pillar": [Vector3(38, 0, 54), Vector3(66, 0, 48), Vector3(78, 0, 42)],
 		"arch": [Vector3(48, 0, 50), Vector3(58, 0, 44)],
+		"puddle": [Vector3(15, 0, 59), Vector3(48, 0, 47),
+			Vector3(72, 0, 55), Vector3(106, 0, 33), Vector3(98, 0, 42)],
 	}
 	for kind in spots.keys():
 		for pos in spots[kind]:
 			if kind == "arch":
 				_prop(kind, pos)
+			elif kind == "puddle":
+				_prop(kind, _floor_safe(pos, 0.12))
 			else:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
