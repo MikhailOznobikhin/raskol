@@ -60,7 +60,17 @@ var model_root: Node3D
 var weapon_model: Node3D
 var anim: AnimationPlayer
 var anim_tree: AnimationTree
-var anim_state: AnimationNodeStateMachinePlayback
+var anim_has_walk_scale := false
+var anim_has_run_scale := false
+var anim_has_idle_walk_blend := false
+var anim_has_walk_run_blend := false
+var anim_has_slash := false
+var anim_has_roll := false
+var anim_has_hit := false
+var anim_has_death := false
+var anim_death_blend := 0.0
+var anim_was_dead := false
+var active_anim_action := ""
 ## шаг комбо, для которого Slash уже запущен (-99 — атаки нет)
 var slash_step := -99
 ## узел Slash и длина его клипа: скорость взмаха задаём через custom timeline
@@ -928,14 +938,13 @@ func _build_anim_tree() -> void:
 	anim_tree = AnimationTree.new()
 	anim_tree.name = "AnimTree"
 	anim_tree.anim_player = NodePath("../" + anim.name)
-	# добавим рядом с анимационным плеером
 	var p := anim.get_parent()
 	if p:
 		p.add_child(anim_tree)
 	else:
 		add_child(anim_tree)
-	anim_tree.tree_root = AnimationNodeStateMachine.new()
-	var sm: AnimationNodeStateMachine = anim_tree.tree_root
+	var blend_tree := AnimationNodeBlendTree.new()
+	anim_tree.tree_root = blend_tree
 	var idle := ModelUtil.pick_anim(anim, ["Idle"])
 	var walk := ModelUtil.pick_anim(anim, ["Walk"])
 	var run := ModelUtil.pick_anim(anim, ["Run"])
@@ -943,18 +952,58 @@ func _build_anim_tree() -> void:
 	var roll := ModelUtil.pick_anim(anim, ["Roll"])
 	var hit := ModelUtil.pick_anim(anim, ["HitRecieve", "HitReact"])
 	var death := ModelUtil.pick_anim(anim, ["Death"])
+	var base := ""
 	if idle != "":
-		sm.add_node("Idle", AnimationNodeAnimation.new())
-		sm.get_node("Idle").animation = idle
+		var idle_node := AnimationNodeAnimation.new()
+		idle_node.animation = idle
+		var idle_clip: Animation = anim.get_animation(idle)
+		if idle_clip != null:
+			idle_clip.loop_mode = Animation.LOOP_LINEAR
+		blend_tree.add_node("Idle", idle_node)
+		base = "Idle"
 	if walk != "":
-		sm.add_node("Walk", AnimationNodeAnimation.new())
-		sm.get_node("Walk").animation = walk
+		var walk_node := AnimationNodeAnimation.new()
+		walk_node.animation = walk
+		var walk_clip: Animation = anim.get_animation(walk)
+		if walk_clip != null:
+			walk_clip.loop_mode = Animation.LOOP_LINEAR
+		blend_tree.add_node("Walk", walk_node)
+		var walk_scale := AnimationNodeTimeScale.new()
+		blend_tree.add_node("WalkScale", walk_scale)
+		blend_tree.connect_node("WalkScale", 0, "Walk")
+		anim_has_walk_scale = true
+		if base == "":
+			base = "WalkScale"
+		else:
+			blend_tree.add_node("IdleWalk", AnimationNodeBlend2.new())
+			blend_tree.connect_node("IdleWalk", 0, base)
+			blend_tree.connect_node("IdleWalk", 1, "WalkScale")
+			base = "IdleWalk"
+			anim_has_idle_walk_blend = true
 	if run != "":
-		sm.add_node("Run", AnimationNodeAnimation.new())
-		sm.get_node("Run").animation = run
+		var run_node := AnimationNodeAnimation.new()
+		run_node.animation = run
+		var run_clip: Animation = anim.get_animation(run)
+		if run_clip != null:
+			run_clip.loop_mode = Animation.LOOP_LINEAR
+		blend_tree.add_node("Run", run_node)
+		var run_scale := AnimationNodeTimeScale.new()
+		blend_tree.add_node("RunScale", run_scale)
+		blend_tree.connect_node("RunScale", 0, "Run")
+		anim_has_run_scale = true
+		if base == "":
+			base = "RunScale"
+		else:
+			blend_tree.add_node("WalkRun", AnimationNodeBlend2.new())
+			blend_tree.connect_node("WalkRun", 0, base)
+			blend_tree.connect_node("WalkRun", 1, "RunScale")
+			base = "WalkRun"
+			anim_has_walk_run_blend = true
+	if base == "":
+		anim_tree.queue_free()
+		anim_tree = null
+		return
 	if slash != "":
-		# у AnimationNodeAnimation нет параметра speed_scale: скорость взмаха
-		# задаётся длиной custom timeline (клип растягивается/сжимается под неё)
 		slash_node = AnimationNodeAnimation.new()
 		slash_node.animation = slash
 		slash_node.use_custom_timeline = true
@@ -962,113 +1011,140 @@ func _build_anim_tree() -> void:
 		var slash_anim: Animation = anim.get_animation(slash)
 		if slash_anim != null:
 			slash_len = slash_anim.length
+			slash_anim.loop_mode = Animation.LOOP_NONE
 		slash_node.timeline_length = slash_len
-		sm.add_node("Slash", slash_node)
+		blend_tree.add_node("SlashClip", slash_node)
+		var slash_shot := AnimationNodeOneShot.new()
+		slash_shot.fadein_time = 0.06
+		slash_shot.fadeout_time = 0.12
+		blend_tree.add_node("SlashShot", slash_shot)
+		blend_tree.connect_node("SlashShot", 0, base)
+		blend_tree.connect_node("SlashShot", 1, "SlashClip")
+		base = "SlashShot"
+		anim_has_slash = true
 	if roll != "":
-		sm.add_node("Roll", AnimationNodeAnimation.new())
-		sm.get_node("Roll").animation = roll
+		var roll_node := AnimationNodeAnimation.new()
+		roll_node.animation = roll
+		roll_node.use_custom_timeline = true
+		roll_node.stretch_time_scale = true
+		var roll_anim: Animation = anim.get_animation(roll)
+		if roll_anim != null:
+			roll_node.timeline_length = roll_anim.length / 1.2
+			roll_anim.loop_mode = Animation.LOOP_NONE
+		blend_tree.add_node("RollClip", roll_node)
+		var roll_shot := AnimationNodeOneShot.new()
+		roll_shot.fadein_time = 0.06
+		roll_shot.fadeout_time = 0.12
+		blend_tree.add_node("RollShot", roll_shot)
+		blend_tree.connect_node("RollShot", 0, base)
+		blend_tree.connect_node("RollShot", 1, "RollClip")
+		base = "RollShot"
+		anim_has_roll = true
 	if hit != "":
-		sm.add_node("Hit", AnimationNodeAnimation.new())
-		sm.get_node("Hit").animation = hit
+		var hit_node := AnimationNodeAnimation.new()
+		hit_node.animation = hit
+		hit_node.use_custom_timeline = true
+		hit_node.stretch_time_scale = true
+		var hit_anim: Animation = anim.get_animation(hit)
+		if hit_anim != null:
+			hit_node.timeline_length = hit_anim.length / 1.1
+			hit_anim.loop_mode = Animation.LOOP_NONE
+		blend_tree.add_node("HitClip", hit_node)
+		var hit_shot := AnimationNodeOneShot.new()
+		hit_shot.fadein_time = 0.04
+		hit_shot.fadeout_time = 0.10
+		blend_tree.add_node("HitShot", hit_shot)
+		blend_tree.connect_node("HitShot", 0, base)
+		blend_tree.connect_node("HitShot", 1, "HitClip")
+		base = "HitShot"
+		anim_has_hit = true
 	if death != "":
-		sm.add_node("Death", AnimationNodeAnimation.new())
-		sm.get_node("Death").animation = death
-	sm.add_transition("Idle", "Walk", _xfade(0.15))
-	sm.add_transition("Walk", "Idle", _xfade(0.15))
-	sm.add_transition("Walk", "Run", _xfade(0.15))
-	sm.add_transition("Run", "Walk", _xfade(0.15))
-	sm.add_transition("Idle", "Run", _xfade(0.15))
-	sm.add_transition("Run", "Idle", _xfade(0.15))
-	sm.add_transition("Idle", "Slash", _xfade(0.06))
-	sm.add_transition("Walk", "Slash", _xfade(0.06))
-	sm.add_transition("Run", "Slash", _xfade(0.06))
-	sm.add_transition("Slash", "Idle", _xfade(0.12))
-	sm.add_transition("Slash", "Walk", _xfade(0.12))
-	sm.add_transition("Slash", "Run", _xfade(0.12))
-	sm.add_transition("Idle", "Roll", _xfade(0.06))
-	sm.add_transition("Walk", "Roll", _xfade(0.06))
-	sm.add_transition("Run", "Roll", _xfade(0.06))
-	sm.add_transition("Roll", "Idle", _xfade(0.12))
-	sm.add_transition("Roll", "Walk", _xfade(0.12))
-	sm.add_transition("Roll", "Run", _xfade(0.12))
-	sm.add_transition("Idle", "Hit", _xfade(0.04))
-	sm.add_transition("Walk", "Hit", _xfade(0.04))
-	sm.add_transition("Run", "Hit", _xfade(0.04))
-	sm.add_transition("Hit", "Idle", _xfade(0.10))
-	sm.add_transition("Hit", "Walk", _xfade(0.10))
-	sm.add_transition("Hit", "Run", _xfade(0.10))
-	sm.add_transition("Idle", "Death", _xfade(0.15))
-	sm.add_transition("Walk", "Death", _xfade(0.15))
-	sm.add_transition("Run", "Death", _xfade(0.15))
+		var death_node := AnimationNodeAnimation.new()
+		death_node.animation = death
+		var death_anim: Animation = anim.get_animation(death)
+		if death_anim != null:
+			death_anim.loop_mode = Animation.LOOP_NONE
+		blend_tree.add_node("Death", death_node)
+		blend_tree.add_node("DeathSeek", AnimationNodeTimeSeek.new())
+		blend_tree.connect_node("DeathSeek", 0, "Death")
+		blend_tree.add_node("DeathBlend", AnimationNodeBlend2.new())
+		blend_tree.connect_node("DeathBlend", 0, base)
+		blend_tree.connect_node("DeathBlend", 1, "DeathSeek")
+		base = "DeathBlend"
+		anim_has_death = true
+	blend_tree.connect_node("output", 0, base)
 	anim_tree.active = true
 	anim_tree.anim_player = anim.get_path()
-	anim_state = anim_tree.get("parameters/playback")
-
-
-func _xfade(fade: float) -> AnimationNodeStateMachineTransition:
-	var tr := AnimationNodeStateMachineTransition.new()
-	tr.xfade_time = fade
-	return tr
 
 
 func _animate_model(dt: float) -> void:
 	if anim == null:
 		return
 	var speed := Vector2(velocity.x, velocity.z).length()
+	var walk_base: float = maxf(walk_speed(), 0.01)
+	var run_base: float = maxf(run_speed(), walk_base)
+	if anim_tree != null:
+		if anim_has_idle_walk_blend:
+			anim_tree.set("parameters/IdleWalk/blend_amount",
+				clampf(speed / walk_base, 0.0, 1.0))
+		if anim_has_walk_scale:
+			anim_tree.set("parameters/WalkScale/scale",
+				clampf(speed / walk_base, 0.7, 1.6))
+		if anim_has_walk_run_blend:
+			var walk_ratio: float = clampf(walk_base / run_base, 0.0, 1.0)
+			anim_tree.set("parameters/WalkRun/blend_amount",
+				clampf((speed / run_base - walk_ratio) / maxf(1.0 - walk_ratio, 0.01), 0.0, 1.0))
+		if anim_has_run_scale:
+			anim_tree.set("parameters/RunScale/scale",
+				clampf(speed / run_base, 0.7, 1.6))
+		if anim_has_death:
+			anim_death_blend = move_toward(anim_death_blend, 1.0 if dead else 0.0,
+				dt / 0.15)
+			anim_tree.set("parameters/DeathBlend/blend_amount", anim_death_blend)
 	if dead:
-		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Death")
-		else:
+		if anim_has_death and not anim_was_dead:
+			anim_tree.set("parameters/DeathSeek/seek_request", 0.0)
+		anim_was_dead = true
+		if anim_tree == null:
 			ModelUtil.play_key(anim, ["Death"], false)
 		return
+	anim_was_dead = false
 	if state == "attack" or state == "heavy":
-		# клип подрезан до одного взмаха 0.72 с: контакт на 0.50 с,
-		# при 2.0x удар ложится на хит-кадр 0.25 с и весь замах успевает проиграть
 		var step := combo_step if state == "attack" else -1
 		var sc := (2.0 + 0.08 * combo_step) if state == "attack" else 1.2
 		if slash_node != null:
 			slash_node.timeline_length = maxf(0.1, slash_len / sc)
-		if anim_state != null and anim_state.has_method("travel"):
+		if anim_tree != null and anim_has_slash:
 			if slash_step != step:
-				# travel() не перезапускает текущее состояние — шаг комбо рестартим явно
-				if slash_step == -99:
-					anim_state.travel("Slash")
-				else:
-					anim_state.start("Slash", true)
+				anim_tree.set("parameters/SlashShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 				slash_step = step
-			else:
-				anim_state.travel("Slash")
-		else:
+		elif anim_tree == null:
 			ModelUtil.play_key(anim, ["Sword_Slash", "Slash", "Attack"], false, sc,
 				0.07 if state == "attack" else 0.10)
+		active_anim_action = "attack"
 		return
 	slash_step = -99
 	if state == "dodge":
-		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Roll")
-		else:
+		if anim_tree != null and anim_has_roll:
+			if active_anim_action != "dodge":
+				anim_tree.set("parameters/RollShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+		elif anim_tree == null:
 			ModelUtil.play_key(anim, ["Roll"], false, 1.2, 0.06)
-		if anim_tree != null:
-			anim_tree.set("parameters/Roll/speed_scale", 1.2)
+		active_anim_action = "dodge"
 		return
 	if state == "hurt":
-		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Hit")
-		else:
+		if anim_tree != null and anim_has_hit:
+			if active_anim_action != "hurt":
+				anim_tree.set("parameters/HitShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+		elif anim_tree == null:
 			ModelUtil.play_key(anim, ["HitRecieve", "HitReact"], false, 1.1, 0.05)
+		active_anim_action = "hurt"
 		return
-	if anim_state != null and anim_state.has_method("travel"):
-		if speed > 0.45:
-			var running := speed > run_threshold()
-			anim_state.travel("Run" if running else "Walk")
-			var base := run_speed() if running else walk_speed()
-			if anim_tree != null:
-				var sc := clampf(speed / base, 0.7, 1.6)
-				anim_tree.set("parameters/Walk/speed_scale", sc)
-				anim_tree.set("parameters/Run/speed_scale", sc)
-		else:
-			anim_state.travel("Idle")
-	else:
+	active_anim_action = ""
+	if anim_tree == null:
 		if speed > 0.45:
 			var running := speed > run_threshold()
 			var base := run_speed() if running else walk_speed()

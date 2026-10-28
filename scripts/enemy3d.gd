@@ -62,9 +62,14 @@ var use_model := false
 var model_root: Node3D
 var anim: AnimationPlayer
 var anim_tree: AnimationTree
-var anim_state: AnimationNodeStateMachinePlayback
-var flash_mat: StandardMaterial3D
+var anim_has_move_scale := false
+var anim_has_idle_move_blend := false
+var anim_has_attack := false
+var anim_has_death := false
+var anim_death_blend := 0.0
 var anim_was_dead := false
+var active_anim_action := ""
+var flash_mat: StandardMaterial3D
 
 static var barks: Array = []
 
@@ -728,47 +733,81 @@ func _build_anim_tree() -> void:
 		p.add_child(anim_tree)
 	else:
 		add_child(anim_tree)
-	anim_tree.tree_root = AnimationNodeStateMachine.new()
-	var sm: AnimationNodeStateMachine = anim_tree.tree_root
+	var blend_tree := AnimationNodeBlendTree.new()
+	anim_tree.tree_root = blend_tree
 	# у стражи и босса одинаковый набор клипов (Mixamo-риг), ключи общие
 	var idle := ModelUtil.pick_anim(anim, ["Idle"])
 	var walk := ModelUtil.pick_anim(anim, ["Walk", "Running"])
 	var attack := ModelUtil.pick_anim(anim, ["Attack", "Headbutt", "Punch"])
 	var die := ModelUtil.pick_anim(anim, ["Die", "Death"])
+	var base := ""
 	if idle != "":
-		sm.add_node("Idle", AnimationNodeAnimation.new()); sm.get_node("Idle").animation = idle
+		var idle_node := AnimationNodeAnimation.new()
+		idle_node.animation = idle
+		var idle_clip: Animation = anim.get_animation(idle)
+		if idle_clip != null:
+			idle_clip.loop_mode = Animation.LOOP_LINEAR
+		blend_tree.add_node("Idle", idle_node)
+		base = "Idle"
 	if walk != "":
-		sm.add_node("Move", AnimationNodeAnimation.new()); sm.get_node("Move").animation = walk
+		var move_node := AnimationNodeAnimation.new()
+		move_node.animation = walk
+		var move_clip: Animation = anim.get_animation(walk)
+		if move_clip != null:
+			move_clip.loop_mode = Animation.LOOP_LINEAR
+		blend_tree.add_node("Move", move_node)
+		var move_scale := AnimationNodeTimeScale.new()
+		blend_tree.add_node("MoveScale", move_scale)
+		blend_tree.connect_node("MoveScale", 0, "Move")
+		anim_has_move_scale = true
+		if base == "":
+			base = "MoveScale"
+		else:
+			blend_tree.add_node("Locomotion", AnimationNodeBlend2.new())
+			blend_tree.connect_node("Locomotion", 0, base)
+			blend_tree.connect_node("Locomotion", 1, "MoveScale")
+			base = "Locomotion"
+			anim_has_idle_move_blend = true
+	if base == "":
+		anim_tree.queue_free()
+		anim_tree = null
+		return
 	if attack != "":
-		# у AnimationNodeAnimation нет speed_scale: взмах на 1.3x задаём длиной
-		# custom timeline, чтобы контакт клипа совпал с моментом урона (0.35 с)
-		var an := AnimationNodeAnimation.new()
-		an.animation = attack
-		an.use_custom_timeline = true
-		an.stretch_time_scale = true
-		var aa: Animation = anim.get_animation(attack)
-		var alen: float = aa.length if aa != null else 0.72
-		an.timeline_length = alen / 1.3
-		sm.add_node("Attack", an)
+		var attack_node := AnimationNodeAnimation.new()
+		attack_node.animation = attack
+		attack_node.use_custom_timeline = true
+		attack_node.stretch_time_scale = true
+		var attack_anim: Animation = anim.get_animation(attack)
+		var attack_len: float = attack_anim.length if attack_anim != null else 0.72
+		attack_node.timeline_length = attack_len / 1.3
+		if attack_anim != null:
+			attack_anim.loop_mode = Animation.LOOP_NONE
+		blend_tree.add_node("AttackClip", attack_node)
+		var attack_shot := AnimationNodeOneShot.new()
+		attack_shot.fadein_time = 0.08
+		attack_shot.fadeout_time = 0.12
+		blend_tree.add_node("AttackShot", attack_shot)
+		blend_tree.connect_node("AttackShot", 0, base)
+		blend_tree.connect_node("AttackShot", 1, "AttackClip")
+		base = "AttackShot"
+		anim_has_attack = true
 	if die != "":
-		sm.add_node("Death", AnimationNodeAnimation.new()); sm.get_node("Death").animation = die
-	sm.add_transition("Idle", "Move", _xfade(0.15))
-	sm.add_transition("Move", "Idle", _xfade(0.15))
-	sm.add_transition("Idle", "Attack", _xfade(0.08))
-	sm.add_transition("Move", "Attack", _xfade(0.08))
-	sm.add_transition("Attack", "Idle", _xfade(0.12))
-	sm.add_transition("Attack", "Move", _xfade(0.12))
-	sm.add_transition("Idle", "Death", _xfade(0.12))
-	sm.add_transition("Move", "Death", _xfade(0.12))
+		var death_node := AnimationNodeAnimation.new()
+		death_node.animation = die
+		var death_anim: Animation = anim.get_animation(die)
+		if death_anim != null:
+			death_anim.loop_mode = Animation.LOOP_NONE
+		blend_tree.add_node("Death", death_node)
+		blend_tree.add_node("DeathSeek", AnimationNodeTimeSeek.new())
+		blend_tree.connect_node("DeathSeek", 0, "Death")
+		blend_tree.add_node("DeathBlend", AnimationNodeBlend2.new())
+		blend_tree.connect_node("DeathBlend", 0, base)
+		blend_tree.connect_node("DeathBlend", 1, "DeathSeek")
+		base = "DeathBlend"
+		anim_has_death = true
+	blend_tree.connect_node("output", 0, base)
 	anim_tree.active = true
 	anim_tree.anim_player = anim.get_path()
-	anim_state = anim_tree.get("parameters/playback")
-
-
-func _xfade(fade: float) -> AnimationNodeStateMachineTransition:
-	var tr := AnimationNodeStateMachineTransition.new()
-	tr.xfade_time = fade
-	return tr
 
 
 ## Анимации модели: Idle/Walk/Attack/Death — набор клипов у стражи и босса общий.
@@ -776,28 +815,37 @@ func _animate_model(dt: float) -> void:
 	if anim == null:
 		return
 	var sp := Vector2(velocity.x, velocity.z).length()
+	if anim_tree != null:
+		if anim_has_idle_move_blend:
+			var move_base: float = chase_speed if state in ["chase", "attack"] else speed
+			anim_tree.set("parameters/Locomotion/blend_amount",
+				clampf(sp / maxf(move_base, 0.01), 0.0, 1.0))
+		if anim_has_move_scale:
+			anim_tree.set("parameters/MoveScale/scale",
+				clampf(sp / 2.6, 0.8, 1.8))
+		if anim_has_death:
+			anim_death_blend = move_toward(anim_death_blend, 1.0 if dead else 0.0,
+				dt / 0.15)
+			anim_tree.set("parameters/DeathBlend/blend_amount", anim_death_blend)
 	if dead:
-		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Death")
-		else:
+		if anim_has_death and not anim_was_dead:
+			anim_tree.set("parameters/DeathSeek/seek_request", 0.0)
+		anim_was_dead = true
+		if anim_tree == null:
 			ModelUtil.play_key(anim, ["Die", "Death"], false)
 		return
+	anim_was_dead = false
 	if state == "attack":
-		# клип-взмах 0.72 с: контакт на 0.50 с при 1.3x ≈ 0.38 с — рядом с уроном (0.35 с)
-		if anim_state != null and anim_state.has_method("travel"):
-			anim_state.travel("Attack")
-		else:
+		if anim_tree != null and anim_has_attack:
+			if active_anim_action != "attack":
+				anim_tree.set("parameters/AttackShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
+		elif anim_tree == null:
 			ModelUtil.play_key(anim, ["Attack"], false, 1.3)
+		active_anim_action = "attack"
 		return
-	if anim_state != null and anim_state.has_method("travel"):
-		if sp > 0.25:
-			anim_state.travel("Move")
-			if anim_tree != null:
-				var sc := clampf(sp / 2.6, 0.8, 1.8)
-				anim_tree.set("parameters/Move/speed_scale", sc)
-		else:
-			anim_state.travel("Idle")
-	else:
+	active_anim_action = ""
+	if anim_tree == null:
 		if sp > 0.25:
 			ModelUtil.play_key(anim, ["Walk", "Running"], true, clampf(sp / 2.6, 0.8, 1.8))
 		else:
