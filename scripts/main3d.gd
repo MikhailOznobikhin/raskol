@@ -137,6 +137,7 @@ func _shots_mode() -> void:
 	# для читаемых скриншотов снимаем окно, а не весь монитор
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(Vector2i(1280, 720))
+	DisplayServer.window_set_position(Vector2i.ZERO)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# страховка: если съёмка застрянет на await, окно закроется само —
 	# иначе запущенная игра остаётся висеть на ноутбуке до утра
@@ -203,6 +204,12 @@ func _shots_mode() -> void:
 			m.cam.pitch = 0.24
 		await get_tree().create_timer(1.2).timeout
 		await _shot("3d_vault")
+		m.hero.global_position = Vector3(13.0, 0.2, 33.0)
+		if m.cam:
+			m.cam.yaw = -PI * 0.5
+			m.cam.pitch = 0.08
+		await get_tree().create_timer(1.2).timeout
+		await _shot("3d_mine_loop")
 	if m and m.hud:
 		m.hud.visible = true
 		m.hud.set_process(true)
@@ -493,6 +500,46 @@ func _test_mode() -> void:
 	m.hero.control_enabled = false
 	print("TEST start magic=", GameState.magic, " hp=", GameState.health,
 		" enemies=", m.enemies.size(), " fleshes=", m.fleshes.size())
+
+	var branch_path: Array[Vector2i] = []
+	for x in range(3, 13):
+		branch_path.append(Vector2i(x, 13))
+	for y in range(14, 20):
+		branch_path.append(Vector2i(3, y))
+	for x in range(4, 13):
+		branch_path.append(Vector2i(x, 19))
+	for y in range(14, 19):
+		for x in range(3, 9):
+			branch_path.append(Vector2i(x, y))
+	var branch_open := true
+	for cell in branch_path:
+		if m.dungeon.is_wall(cell.x, cell.y):
+			branch_open = false
+			break
+	var branch_sealed := true
+	for y in range(14, 19):
+		for x in range(9, 12):
+			if not m.dungeon.is_wall(x, y):
+				branch_sealed = false
+				break
+	var branch_note := false
+	var branch_item := false
+	for pickup in m.pickups:
+		var pickup_node: Node3D = pickup["node"]
+		var in_branch: bool = pickup_node.position.x >= 6.0 \
+			and pickup_node.position.x <= 18.0 \
+			and pickup_node.position.z >= 28.0 and pickup_node.position.z <= 38.0
+		if pickup["kind"] == "note" and pickup["index"] == 4 and in_branch:
+			branch_note = true
+		elif pickup["kind"] == "item" and pickup["index"] == 6 and in_branch:
+			branch_item = true
+	if not branch_open or not branch_sealed or not branch_note or not branch_item:
+		print("TEST FAIL: боковая выработка path=", branch_open,
+			" sealed=", branch_sealed,
+			" note=", branch_note, " item=", branch_item)
+		get_tree().quit()
+		return
+	print("TEST side loop connected=true sealed=true note=true item=true")
 
 	# Герой обязан надеть glTF-модель: иначе он молча остаётся примитивами,
 	# и заметить это можно только глазами в кадре.
