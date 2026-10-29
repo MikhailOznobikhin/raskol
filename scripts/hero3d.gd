@@ -117,6 +117,9 @@ func _ready() -> void:
 	add_child(col)
 	_build_rig()
 	_add_readability_light()
+	step_fx = FootstepFx.new()
+	step_fx.name = "FootstepFx"
+	add_child(step_fx)
 	footsteps = FootstepPlayer.new()
 	add_child(footsteps)
 	footstep.connect(footsteps.on_footstep)
@@ -940,15 +943,16 @@ func _sfx_pos() -> Vector3:
 	return global_position + Vector3(0, 0.9, 0)
 
 
-## Шаг: нога попеременно слева/справа и чуть впереди центра, эффект по
-## поверхности под ней, сигнал — для звука шагов этапа 10.
+## Шаг: нога попеременно слева/справа и чуть впереди центра, пыль/брызги по
+## поверхности под ней (этап 9). Звук шага шлёт отдельно _animate() через
+## сигнал footstep — иначе на один шаг приходилось бы два звука.
 func _footstep() -> void:
 	_step_left = not _step_left
 	var side := rig.global_transform.basis.x * (-0.12 if _step_left else 0.12)
 	var fwd := -rig.global_transform.basis.z * 0.1
 	var foot := global_position + side + fwd
 	foot.y = global_position.y
-	footstep.emit(step_fx.step(foot, get_world_3d()))
+	step_fx.step(foot, get_world_3d())
 
 
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
