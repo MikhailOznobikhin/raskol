@@ -51,9 +51,6 @@ const MIST_MATERIAL := "res://materials/fog_ground_mist.tres"
 const MIST_HEIGHT := 1.0
 ## Пыль в воздухе (этап 7): одна сцена и для луча из свода, и для камеры.
 const DUST_SCENE := "res://scenes/fx/dust_motes.tscn"
-## Эффекты воздуха этапа 7 — переключатели для будущего меню качества:
-## mist — дымка над водой, dust — пыль, post — виньетка и зерно (Cam3D).
-static var air_fx := {"mist": true, "dust": true, "post": true}
 
 var lines: Array = []
 var map_w := 0
@@ -1125,18 +1122,19 @@ static func make_world_environment() -> WorldEnvironment:
 		"off":
 			gi_enabled = false
 	env.sdfgi_enabled = gi_enabled
+	# объёмный туман, SSR, SSIL — из меню графики
+	Settings.apply_environment(env)
 	var we := WorldEnvironment.new()
 	we.name = "WorldEnvironment"
 	we.environment = env
 	return we
 
 
-## Включён ли эффект воздуха. AIR_FX_OFF=mist,dust,post — быстро выключить
-## на отладке без правки кода (как DUNGEON_GI).
+## Строить ли эффект воздуха вообще. AIR_FX_OFF=mist,dust,post — убрать на
+## отладке без правки кода (как DUNGEON_GI). Игрок их не удаляет, а прячет:
+## видимость задаёт меню графики (Settings.gfx["air"], Settings.post_fx).
 static func air_fx_on(kind: String) -> bool:
-	if kind in OS.get_environment("AIR_FX_OFF").split(","):
-		return false
-	return air_fx.get(kind, true)
+	return not kind in OS.get_environment("AIR_FX_OFF").split(",")
 
 
 ## Скрытый контейнер для снятых узлов: не рисуется и не обрабатывается.
@@ -1275,6 +1273,7 @@ func _dust_motes() -> GPUParticles3D:
 		return null
 	var p := (load(DUST_SCENE) as PackedScene).instantiate() as GPUParticles3D
 	p.add_to_group("fx_dust")
+	p.visible = Settings.gfx["air"]
 	return p
 
 
@@ -1313,6 +1312,7 @@ func _add_ground_mist(center: Vector3, size_xz: Vector2) -> void:
 	fv.material = load(MIST_MATERIAL)
 	fv.position = Vector3(center.x, center.y + MIST_HEIGHT * 0.5, center.z)
 	fv.add_to_group("fx_mist")
+	fv.visible = Settings.gfx["air"]
 	add_child(fv)
 	mist_volumes.append(fv)
 
@@ -2113,8 +2113,10 @@ func _process(delta: float) -> void:
 				continue
 			ranked.append({"l": li, "d": _light_world_position(li).distance_to(center)})
 		ranked.sort_custom(func(a, b): return a["d"] < b["d"])
+		# лимит уровня или меньший из меню графики
+		var budget := mini(shadow_budget, Settings.shadow_limit())
 		for i in ranked.size():
-			ranked[i]["l"].shadow_enabled = i < shadow_budget and ranked[i]["d"] < 15.0
+			ranked[i]["l"].shadow_enabled = i < budget and ranked[i]["d"] < 15.0
 
 
 ## Настенный факел: общая сцена torch.tscn на кронштейне у грани стены.
