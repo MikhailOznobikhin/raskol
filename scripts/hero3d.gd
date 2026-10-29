@@ -89,8 +89,15 @@ var slash_len := 0.72
 var last_safe_position: Vector3 = Vector3.ZERO
 var _safe_timer := 0.0
 var lowest_floor_y := 0.0
+## Скриптовое движение (фото-тур этапа 9): мировое направление вместо ввода.
+var scripted_move := Vector3.ZERO
+## Пыль и брызги под ногой; следующий шаг — левой или правой.
+var step_fx: FootstepFx
+var _step_left := false
 
 signal died
+## Шаг коснулся пола: &"stone" / &"water" / &"wood" — для звука этапа 10.
+signal footstep(surface: StringName)
 
 
 func _ready() -> void:
@@ -106,6 +113,9 @@ func _ready() -> void:
 	add_child(col)
 	_build_rig()
 	_add_readability_light()
+	step_fx = FootstepFx.new()
+	step_fx.name = "FootstepFx"
+	add_child(step_fx)
 
 
 ## Едва заметная тёплая лампа над-перед гномом: в тёмном коридоре он не
@@ -285,6 +295,7 @@ func _build_rig() -> void:
 
 	_add_blob_shadow(0.55)
 	_attach_model()
+	_tune_character_materials()
 	# Лужи-декали проецируются только на слой 1: герой живёт на слое 2,
 	# иначе вода красит сапоги и плащ.
 	ModelUtil.set_visual_layer(self, ModelUtil.CHARACTER_LAYER)
@@ -330,6 +341,44 @@ func _attach_weapon(model: Node3D) -> void:
 	weapon_model = tool
 
 
+## Этап 9: герой отбрасывает тень от факелов и не блестит пластиком.
+## Ткань и кожа модели — шероховатость 0.6–0.9 (в glb было 1.0, металлик 0),
+## боёк молота — металл 0.8 / шероховатость 0.5 (в glb сталь была 0.4 / 0.42),
+## рукоять — дерево без металличности. Материалы дублируются: ресурс glb
+## общий с превью и другими экземплярами модели.
+## Пятно-тень под ногами само тень не отбрасывает — это подложка.
+func _tune_character_materials() -> void:
+	for mi in ModelUtil.meshes(self):
+		var gi := mi as MeshInstance3D
+		if gi.name == "BlobShadow":
+			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	if model_root == null:
+		return
+	for mi in ModelUtil.meshes(model_root):
+		var gi := mi as MeshInstance3D
+		# у шляпы и примитивов свой material_override — он и так 0.9
+		if gi.mesh == null or gi.material_override != null:
+			continue
+		var on_weapon: bool = weapon_model != null and weapon_model.is_ancestor_of(gi)
+		for s in gi.mesh.get_surface_count():
+			var src := gi.get_active_material(s) as BaseMaterial3D
+			if src == null:
+				continue
+			var mat := src.duplicate() as BaseMaterial3D
+			if on_weapon and String(src.resource_name).contains("Steel"):
+				mat.metallic = 0.8
+				mat.roughness = 0.5
+			elif on_weapon:
+				mat.metallic = 0.0
+				mat.roughness = 0.7
+			else:
+				mat.metallic = 0.0
+				mat.roughness = clampf(src.roughness, 0.6, 0.85)
+			gi.set_surface_override_material(s, mat)
+
+
 func _add_blob_shadow(radius: float) -> void:
 	var grad := Gradient.new()
 	grad.set_color(0, Color(0, 0, 0, 0.55))
@@ -344,6 +393,7 @@ func _add_blob_shadow(radius: float) -> void:
 	var q := QuadMesh.new()
 	q.size = Vector2(radius * 2.2, radius * 2.2)
 	var mi := MeshInstance3D.new()
+	mi.name = "BlobShadow"
 	mi.mesh = q
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = tex
@@ -629,6 +679,8 @@ func _physics_process(delta: float) -> void:
 		yaw = cam.global_rotation.y
 	var dir := Vector3(input.x, 0, input.y)
 	dir = dir.rotated(Vector3.UP, yaw)
+	if scripted_move.length_squared() > 0.0001:
+		dir = Vector3(scripted_move.x, 0.0, scripted_move.z)
 	if dir.length() > 1.0:
 		dir = dir.normalized()
 	move_dir = dir
@@ -683,7 +735,7 @@ func _physics_process(delta: float) -> void:
 		_:
 			var run := Input.is_action_pressed("sneak") and not crouching
 			target_speed = crouch_speed() if crouching else (run_speed() if run else walk_speed())
-			if input.length() < 0.1:
+			if dir.length() < 0.1:
 				target_speed = 0.0
 	_handle_input()
 
@@ -851,9 +903,9 @@ func _hit(heavy: bool) -> void:
 		_impact(hit_pos, heavy)
 		_hitstop()
 		emit_noise(Balance.NOISE_HIT)
-		# первые два удара комбо только помечают ритм, третий и тяжёлый бьют по камере
-		_shake(2.6 if heavy else 0.45 + 0.9 * combo_step, 0.15,
-			hit_pos - global_position)
+		# поворотная тряска на травме (этап 9): первые удары комбо едва
+		# отмечают ритм, третий заметнее, тяжёлый — до предела в 0.6°
+		_impact_trauma(1.0 if heavy else 0.55 + 0.15 * combo_step)
 	else:
 		Sfx.play_at("sfx_swing", _sfx_pos(), -14.0, 1.2)
 
@@ -865,9 +917,26 @@ func _shake(amount: float, duration: float, impact_direction: Vector3 = Vector3.
 		cam_node.shake(amount, duration, impact_direction)
 
 
+func _impact_trauma(amount: float) -> void:
+	var cam_node := get_tree().get_first_node_in_group("cam")
+	if cam_node != null and cam_node.has_method("add_trauma"):
+		cam_node.add_trauma(amount)
+
+
 ## Точка у груди героя — откуда звучат его взмахи и шаги.
 func _sfx_pos() -> Vector3:
 	return global_position + Vector3(0, 0.9, 0)
+
+
+## Шаг: нога попеременно слева/справа и чуть впереди центра, эффект по
+## поверхности под ней, сигнал — для звука шагов этапа 10.
+func _footstep() -> void:
+	_step_left = not _step_left
+	var side := rig.global_transform.basis.x * (-0.12 if _step_left else 0.12)
+	var fwd := -rig.global_transform.basis.z * 0.1
+	var foot := global_position + side + fwd
+	foot.y = global_position.y
+	footstep.emit(step_fx.step(foot, get_world_3d()))
 
 
 func take_damage(amount: float, from := Vector3.ZERO) -> void:
@@ -998,6 +1067,7 @@ func _animate(dt: float) -> void:
 			step_t = 0.0
 			Sfx.play_at_varied("sfx_step", global_position, -24.0 if not crouching else -30.0)
 			emit_noise(noise_radius())
+			_footstep()
 
 	if use_model:
 		_animate_model(dt)

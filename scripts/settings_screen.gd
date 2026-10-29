@@ -1,12 +1,13 @@
 extends Control
-## Экран настроек: разрешение окна, полный экран, громкость, покачивание камеры
-## и графика.
+## Экран настроек: разрешение окна, полный экран, громкость, покачивание и
+## тряска камеры, графика.
 ## Работает и как отдельная страница меню (1280×720), и как оверлей паузы
 ## (тогда вызывающий ставит scale = 0.5, т.к. HUD живёт в 640×360).
 
 signal closed
 
-const ROW_H := 34.0
+## 32, а не 34: с 14 строками кнопка «Назад» иначе вылезает за панель.
+const ROW_H := 32.0
 const SECTION_H := 34.0
 const PANEL_W := 660.0
 const PANEL_H := 660.0
@@ -42,6 +43,10 @@ var specs: Array[Dictionary] = [
 	{"text": "ПОКАЧИВАНИЕ", "value": Settings.bob_label,
 		"on": func(): return Settings.camera_bob > 0.001,
 		"change": Settings.cycle_camera_bob},
+	{"text": "ТРЯСКА КАМЕРЫ",
+		"value": func(): return "ВКЛ" if Settings.camera_shake else "ВЫКЛ",
+		"on": func(): return Settings.camera_shake,
+		"change": func(_step: int): Settings.toggle_camera_shake()},
 	{"text": "КАЧЕСТВО", "section": "ГРАФИКА", "value": Settings.quality_label,
 		"on": func(): return true,
 		"change": Settings.cycle_quality},
