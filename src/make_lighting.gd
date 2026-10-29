@@ -46,6 +46,14 @@ func _environment() -> Environment:
 	env.ssil_enabled = true
 	env.ssil_radius = 4.0
 	env.ssil_intensity = 0.8
+	# Отражения в лужах (этап 5): без SSR глянец декали читается одной белой
+	# точкой блика. 64 шага — компромисс: на 48 видны разрывы, на 96 дорого
+	# для 1080p на GTX 1660.
+	env.ssr_enabled = true
+	env.ssr_max_steps = 64
+	env.ssr_fade_in = 0.15
+	env.ssr_fade_out = 2.0
+	env.ssr_depth_tolerance = 0.2
 	# Уровни генерируются в рантайме -> из GI подходит только SDFGI (LightmapGI
 	# нечего запекать). A/B этапа 6: вклад SDFGI почти не виден, а стоит 10-20 %
 	# FPS, поэтому по умолчанию он выключен; параметры оставлены для меню качества.

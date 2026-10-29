@@ -121,6 +121,8 @@ func _ready() -> void:
 	_update_health_bar()
 	_build_hurtbox()
 	_add_blob_shadow(0.5 if not is_boss else 0.9)
+	# Тот же слой, что у героя: декали луж и копоти не красят стражу.
+	ModelUtil.set_visual_layer(self, ModelUtil.CHARACTER_LAYER)
 
 
 func _mat(c: Color, rough := 0.8, metal := 0.0) -> StandardMaterial3D:

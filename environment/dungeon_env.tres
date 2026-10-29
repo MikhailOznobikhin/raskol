@@ -9,6 +9,7 @@ ambient_light_energy = 0.35
 reflected_light_source = 1
 tonemap_mode = 4
 tonemap_exposure = 1.2
+ssr_enabled = true
 ssao_enabled = true
 ssao_light_affect = 0.1
 ssil_enabled = true

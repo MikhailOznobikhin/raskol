@@ -1,0 +1,21 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/puddle.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://textures/decals/puddle_mask_0.png" id="2_mask"]
+[ext_resource type="Texture2D" path="res://textures/decals/puddle_normal.png" id="3_normal"]
+[ext_resource type="Texture2D" path="res://textures/decals/puddle_orm.png" id="4_orm"]
+
+[node name="Puddle" type="Decal"]
+size = Vector3(1.5, 0.4, 1.5)
+texture_albedo = ExtResource("2_mask")
+texture_normal = ExtResource("3_normal")
+texture_orm = ExtResource("4_orm")
+albedo_mix = 0.55
+normal_fade = 0.5
+upper_fade = 0.0
+lower_fade = 0.0
+cull_mask = 1
+distance_fade_enabled = true
+distance_fade_begin = 30.0
+distance_fade_length = 8.0
+script = ExtResource("1_script")
