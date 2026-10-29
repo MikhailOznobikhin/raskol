@@ -91,6 +91,12 @@ var _safe_timer := 0.0
 var lowest_floor_y := 0.0
 
 signal died
+## Шаг коснулся пола: surface — "stone", "water" или "wood" (этап 10).
+signal footstep(surface: String)
+
+const STEP_DB := -10.0
+const STEP_DB_CROUCH := -17.0
+var footsteps: FootstepPlayer
 
 
 func _ready() -> void:
@@ -106,6 +112,17 @@ func _ready() -> void:
 	add_child(col)
 	_build_rig()
 	_add_readability_light()
+	footsteps = FootstepPlayer.new()
+	add_child(footsteps)
+	footstep.connect(footsteps.on_footstep)
+
+
+## Поверхность под ногами: её знает подземелье (лужи), вне его — камень.
+func surface_under() -> String:
+	var d := get_tree().get_first_node_in_group("dungeon")
+	if d != null and d.has_method("surface_at"):
+		return d.surface_at(global_position)
+	return "stone"
 
 
 ## Едва заметная тёплая лампа над-перед гномом: в тёмном коридоре он не
@@ -996,7 +1013,8 @@ func _animate(dt: float) -> void:
 		step_t += dt
 		if step_t > (0.55 if crouching else (0.42 if speed < run_threshold() else 0.3)):
 			step_t = 0.0
-			Sfx.play_at_varied("sfx_step", global_position, -24.0 if not crouching else -30.0)
+			footsteps.volume_db = STEP_DB_CROUCH if crouching else STEP_DB
+			footstep.emit(surface_under())
 			emit_noise(noise_radius())
 
 	if use_model:

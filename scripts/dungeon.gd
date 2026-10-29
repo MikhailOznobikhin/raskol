@@ -51,6 +51,11 @@ const MIST_MATERIAL := "res://materials/fog_ground_mist.tres"
 const MIST_HEIGHT := 1.0
 ## Пыль в воздухе (этап 7): одна сцена и для луча из свода, и для камеры.
 const DUST_SCENE := "res://scenes/fx/dust_motes.tscn"
+## Капля о лужу (этап 10): три варианта, рандомизатор их чередует.
+const DRIP_SOUNDS := ["res://audio/ambience/drip_0.wav",
+	"res://audio/ambience/drip_1.wav", "res://audio/ambience/drip_2.wav"]
+## Радиус «мокрого» пятна лужи при scale = 1 (декаль 1.5 м, маска уже края).
+const PUDDLE_WET_RADIUS := 0.6
 
 var lines: Array = []
 var map_w := 0
@@ -118,6 +123,8 @@ var puddles: Array[Node3D] = []
 var _puddle_packed: PackedScene
 ## Коробки низкой дымки (этап 7).
 var mist_volumes: Array[FogVolume] = []
+## Реверб комнат, тон помещения и случайные звуки (этап 10).
+var audio: DungeonAudio
 
 
 func _ready() -> void:
@@ -150,6 +157,7 @@ func build() -> void:
 	_add_atmosphere()
 	_add_wet_mist()
 	_add_camera_dust()
+	_add_audio()
 	print("PUDDLES decals=", puddles.size(), " legacy=", LEGACY_PUDDLE_PLANES)
 
 
@@ -1319,7 +1327,7 @@ func _add_ground_mist(center: Vector3, size_xz: Vector2) -> void:
 
 ## Капель с трещины: одна капля раз в 1.5–4 с. Один частичный узел
 ## перезапускается таймером — ровный поток читался бы дождём, а не сыростью.
-## Звука капли в проекте ещё нет: сырьё для него — этап 10.
+## Звук капли раздаётся у пола в момент, когда капля долетает до лужи.
 func _add_drip(pos: Vector3, top: float) -> void:
 	var drop := GPUParticles3D.new()
 	drop.amount = 1
@@ -1355,10 +1363,54 @@ func _add_drip(pos: Vector3, top: float) -> void:
 	timer.wait_time = randf_range(1.5, 4.0)
 	timer.autostart = true
 	drop.add_child(timer)
+	var splash := _drip_sound_player()
+	splash.position = Vector3(pos.x, 0.05, pos.z)
+	add_child(splash)
+	# Время падения с высоты свода при начальной скорости ~0.35 м/с.
+	var v0 := 0.35
+	var fall := (sqrt(v0 * v0 + 2.0 * 9.8 * (top - 0.05)) - v0) / 9.8
 	timer.timeout.connect(func():
 		drop.restart()
 		timer.wait_time = randf_range(1.5, 4.0)
+		get_tree().create_timer(fall).timeout.connect(splash.play)
 	)
+
+
+func _drip_sound_player() -> AudioStreamPlayer3D:
+	var rnd := AudioStreamRandomizer.new()
+	rnd.playback_mode = AudioStreamRandomizer.PLAYBACK_RANDOM_NO_REPEATS
+	rnd.random_pitch = 1.12
+	rnd.random_volume_offset_db = 2.0
+	for path in DRIP_SOUNDS:
+		if ResourceLoader.exists(path):
+			rnd.add_stream(-1, load(path))
+	var p := AudioStreamPlayer3D.new()
+	p.name = "DripSound"
+	p.stream = rnd
+	p.bus = "SFX"
+	p.area_mask = Sfx.AUDIO_ZONE_MASK
+	p.volume_db = -8.0
+	p.unit_size = 2.0
+	p.max_distance = 14.0
+	return p
+
+
+func _add_audio() -> void:
+	audio = DungeonAudio.new()
+	audio.name = "Audio"
+	add_child(audio)
+	audio.build(self)
+
+
+## Поверхность под ногами для звука шагов: в луже — вода, иначе камень.
+## Деревянного пола в M1 нет, поэтому «wood» отсюда не приходит —
+## FootstepPlayer его поддерживает для уровней, где он есть.
+func surface_at(pos: Vector3) -> String:
+	for p in puddles:
+		var r := PUDDLE_WET_RADIUS * p.scale.x
+		if Vector2(p.position.x - pos.x, p.position.z - pos.z).length() < r:
+			return "water"
+	return "stone"
 
 
 ## Копоть над огнём, мох у пола и лужицы: процедурные Decal вместо новых

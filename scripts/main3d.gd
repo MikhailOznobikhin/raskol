@@ -123,8 +123,9 @@ func start_mission(load_save := false) -> void:
 	var script: GDScript = load("res://scripts/mission3d.gd")
 	var m: Node = script.new()
 	m.load_on_start = load_save
+	# Тон помещения теперь держит само подземелье (DungeonAudio): он живёт
+	# и умирает вместе с уровнем, а случайные звуки комнат идут поверх него.
 	_swap(m)
-	Sfx.loop("amb_prison", -18.0, 1.5)
 
 
 func mission_finished(escaped: bool) -> void:

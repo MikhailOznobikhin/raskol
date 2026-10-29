@@ -300,7 +300,8 @@ func _break_door() -> void:
 		return
 	GameState.spend_magic(20.0)
 	door_open = true
-	Sfx.play("sfx_chain", -5.0)
+	# Из точки решётки: так звон попадает в реверб камеры, а не звучит «в голове».
+	Sfx.play_at("sfx_chain", Vector3(13.0, 1.0, 54.0), -2.0)
 	hero.emit_noise(Balance.NOISE_CHAIN)
 	cam.shake(5.0, 0.3)
 	_remove_barrier_near(Vector3(13.0, 0.0, 54.0), 1.8)
@@ -318,7 +319,7 @@ func _break_door() -> void:
 
 func _open_gate() -> void:
 	gate_open = true
-	Sfx.play("sfx_gate_open", -6.0)
+	Sfx.play_at("sfx_gate_open", Vector3(101.0, 1.5, 46.0), -2.0)
 	cam.shake(4.0, 0.4)
 	_remove_barrier_near(Vector3(101.0, 0.0, 46.0), 1.8)
 	_set_objective("Пройти через казарму в кузню")

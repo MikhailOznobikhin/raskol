@@ -74,3 +74,4 @@ texture={
 3d_physics/layer_3="npc"
 3d_physics/layer_4="props_dynamic"
 3d_physics/layer_5="triggers"
+3d_physics/layer_6="audio_zones"
