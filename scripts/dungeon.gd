@@ -26,6 +26,16 @@ const COVE_SEG := 6
 ## а лицевая кладка на 1.901 м глубже. Сдвигаем модуль в зал, чтобы кирпич
 ## встал на плоскость грани, а свод ушёл в комнату на этот же метр с лишним.
 const WALL_SHIFT := -1.901
+## Общая сцена факела (этап 6): пламя-частицы, мерцающая лампа с мягкой тенью.
+const TORCH_SCENE := preload("res://scenes/props/torch.tscn")
+## Общее окружение всех уровней (этап 6).
+const ENV_PATH := "res://environment/dungeon_env.tres"
+## Дальность «света» факела для стражи (light_at) — игровая величина, а не
+## визуальная: радиус лампы сократили до 7 м, баланс скрытности прежний.
+const TORCH_REACH := 10.0
+## SDFGI выключен по умолчанию (этап 6: почти не виден, -10..20 % FPS);
+## включает будущее меню качества.
+static var gi_enabled := false
 
 var lines: Array = []
 var map_w := 0
@@ -72,6 +82,8 @@ var mat_floor_kit: Material
 var lights: Array = []
 var flames: Array = []
 var shadow_t := 0.0
+## Сколько ближайших к герою огней отбрасывают тени одновременно.
+var shadow_budget := 6
 var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
 ## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
@@ -110,6 +122,8 @@ func build() -> void:
 	_build_props()
 	_dress_rooms()
 	_scatter_torches()
+	_place_torches()
+	_place_hanging_fires()
 	_build_environment()
 	_add_atmosphere()
 
@@ -1060,57 +1074,45 @@ func _light_world_position(light: OmniLight3D) -> Vector3:
 
 
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.018, 0.016)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	# Холодный заполняющий ambient: синеватый цвет контрастирует с тёплыми
-	# факелами и вытаскивает кладку из черноты, не трогая альбедо текстур.
-	env.ambient_light_color = Color(0.34, 0.42, 0.56)
-	env.ambient_light_energy = 0.48
-	# ACES — кинематографичный тон-маппинг, как в меню игры.
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.35
-	env.glow_enabled = true
-	env.glow_intensity = 0.26
-	env.glow_bloom = 0.035
-	env.glow_hdr_threshold = 1.1
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.085, 0.09, 0.115)
-	# Немного реже Dense fog, чтобы свет доходил дальше
-	env.fog_density = 0.009
-	env.ssao_enabled = true
-	# Контактные тени в стыках кладки: без них камень выглядит пластиком.
-	env.ssao_radius = 1.2
-	env.ssao_intensity = 2.0
-	# SSIL добивает свет в углах и на нижних гранях свода, где ambient слаб.
-	env.ssil_enabled = true
-	env.ssil_radius = 2.0
-	env.ssil_intensity = 1.2
-	env.ssil_sharpness = 0.98
-	# объёмный туман даёт световые конусы от факелов. Плотность 0.02 у мыши
-	# факела героя выбеливала полкадра и прятала кладку набора: свели к 0.01.
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.01
-	# Тёплый туман подхватывает цвет ambient и свет факелов
-	env.volumetric_fog_albedo = Color(0.12, 0.1, 0.08)
-	env.volumetric_fog_emission_energy = 0.0
-	env.volumetric_fog_anisotropy = 0.45
-	env.volumetric_fog_length = 40.0
-	env.adjustment_enabled = true
-	env.adjustment_brightness = 1.04
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 0.88
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	# холодный заполняющий свет: без него коридор утопает в красно-коричневом
+	add_child(make_world_environment())
+	# Заполняющий DirectionalLight3D (0.5, холодный, без теней) снят на этапе 6:
+	# под землёй ему неоткуда светить, и он заливал залы ровным серым. Узел
+	# оставлен в скрытом _deprecated до решения владельца.
 	var fill := DirectionalLight3D.new()
 	fill.light_color = Color(0.58, 0.66, 0.86)
 	fill.light_energy = 0.5
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-55.0, 32.0, 0.0)
-	add_child(fill)
+	_deprecated_root().add_child(fill)
+
+
+## WorldEnvironment с общим dungeon_env.tres — единый вид всех уровней.
+## Ресурс общий: переключатель GI меняет его для всех уровней сразу.
+static func make_world_environment() -> WorldEnvironment:
+	var env: Environment = load(ENV_PATH)
+	# DUNGEON_GI=on|off — быстрый A/B SDFGI (отладка, замер FPS)
+	match OS.get_environment("DUNGEON_GI"):
+		"on":
+			gi_enabled = true
+		"off":
+			gi_enabled = false
+	env.sdfgi_enabled = gi_enabled
+	var we := WorldEnvironment.new()
+	we.name = "WorldEnvironment"
+	we.environment = env
+	return we
+
+
+## Скрытый контейнер для снятых узлов: не рисуется и не обрабатывается.
+func _deprecated_root() -> Node3D:
+	var node := get_node_or_null("_deprecated") as Node3D
+	if node == null:
+		node = Node3D.new()
+		node.name = "_deprecated"
+		node.visible = false
+		node.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(node)
+	return node
 
 
 # ---------------------------------------------------------------------------
@@ -1141,13 +1143,22 @@ func _add_light_shafts() -> void:
 		var top: float = cell_ceil(c.x, c.y)
 		var center := cell_center(c.x, c.y)
 		var spot := SpotLight3D.new()
-		spot.light_color = Color(0.55, 0.68, 1.0) if i < 2 \
-			else Color(0.48, 0.78, 0.84) if i == 2 else Color(1.0, 0.62, 0.34)
-		spot.light_energy = 8.0
+		# Холодный слабый акцент против тёплых факелов (этап 6). Было 8.0 и
+		# один оранжевый луч — он и заливал зал ровным рыжим. Конус в тумане
+		# держит light_volumetric_fog_energy, а не яркость на полу.
+		spot.light_color = Color(0.45, 0.55, 0.75)
+		spot.light_energy = 1.0
+		spot.light_volumetric_fog_energy = 4.0
+		spot.light_specular = 0.2
 		spot.spot_range = top + 1.0
 		spot.spot_angle = 30.0
 		spot.spot_attenuation = 1.2
-		spot.shadow_enabled = false
+		spot.shadow_enabled = true
+		spot.shadow_bias = 0.03
+		spot.distance_fade_enabled = true
+		spot.distance_fade_begin = 25.0
+		spot.distance_fade_shadow = 15.0
+		spot.distance_fade_length = 8.0
 		spot.position = center + Vector3(0, top - 0.12, 0)
 		# SpotLight3D светит вдоль -Z; поворот на -90° направляет его вниз.
 		spot.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
@@ -1608,13 +1619,14 @@ func _brazier_prop(pos: Vector3) -> void:
 	flame.add_child(core)
 	flames.append(flame)
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.69, 0.43)
-	light.light_energy = 3.0
-	light.omni_range = 8.5
-	light.shadow_enabled = true
+	_style_fire_light(light)
+	light.light_energy = 2.8
+	light.omni_range = 7.5
 	light.position = Vector3(0, 1.35, 0)
 	root.add_child(light)
-	lights.append({"light": light, "base": 3.0, "seed": randf() * 10.0, "flame": flame})
+	# reach — прежний радиус 8.5 м: дальность для стражи не меняем
+	lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": flame,
+		"reach": 8.5})
 
 
 ## Ткань знамени: простая процедурная текстура с каймой и ромбом. Одна
@@ -1671,68 +1683,16 @@ func _radial_glow_texture() -> GradientTexture2D:
 
 
 func _torch(pos: Vector3) -> void:
-	# стоящий факел: древко от пола, чаша, пламя и тёплый свет
+	# стоящий факел: древко от пола и чаша, огонь и свет — из torch.tscn
 	var root := Node3D.new()
 	root.position = pos
 	add_child(root)
 	_cyl(0.05, 1.9, Vector3(0, 0.95, 0), mat_wood, root)
 	_cyl(0.22, 0.12, Vector3(0, 0.06, 0), mat_metal, root)
-	var bowl := _cyl(0.17, 0.24, Vector3(0, 1.9, 0), mat_metal, root)
-	var flame := Node3D.new()
-	flame.position = Vector3(0, 2.02, 0)
-	root.add_child(flame)
-	# язык пламени: конус + раскалённая сердцевина (шар читался как «яйцо»).
-	# Тени от пламени выключены: иначе меш вокруг лампы гасит весь свет факела.
-	var outer := MeshInstance3D.new()
-	var fmesh := CylinderMesh.new()
-	fmesh.top_radius = 0.012
-	fmesh.bottom_radius = 0.11
-	fmesh.height = 0.36
-	fmesh.radial_segments = 7
-	outer.mesh = fmesh
-	outer.position = Vector3(0, 0.12, 0)
-	outer.material_override = mat_flame
-	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(outer)
-	var core := MeshInstance3D.new()
-	var cmesh := CylinderMesh.new()
-	cmesh.top_radius = 0.006
-	cmesh.bottom_radius = 0.055
-	cmesh.height = 0.2
-	cmesh.radial_segments = 6
-	core.mesh = cmesh
-	core.position = Vector3(0, 0.03, 0)
-	core.material_override = mat_flame_core
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(core)
-	# мягкий ореол вокруг пламени: убирает «трафаретный» вид конуса
-	var halo := MeshInstance3D.new()
-	var hq := QuadMesh.new()
-	hq.size = Vector2(0.7, 0.7)
-	halo.mesh = hq
-	var hm := StandardMaterial3D.new()
-	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.albedo_color = Color(1.0, 0.52, 0.18, 0.55)
-	hm.albedo_texture = _radial_glow_texture()
-	halo.material_override = hm
-	halo.position = Vector3(0, 0.15, 0)
-	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(halo)
-	flames.append(flame)
-
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.76, 0.54)
-	light.light_energy = 3.2
-	light.omni_range = 10.5
-	light.omni_attenuation = 1.0
-	light.shadow_enabled = true
-	# лампа выше языка пламени: так свет не оказывается внутри меша
-	light.position = Vector3(0, 2.42, 0)
-	root.add_child(light)
-	lights.append({"light": light, "base": 3.2, "seed": randf() * 10.0, "flame": flame})
+	_cyl(0.17, 0.24, Vector3(0, 1.9, 0), mat_metal, root)
+	# пламя сцены на (0, 1.1, 0.3): садим его на верх чаши (y = 2.02)
+	var torch := _spawn_torch(root, Transform3D(Basis.IDENTITY, Vector3(0, 0.92, -0.3)), 10.5)
+	(torch.get_node("Mesh") as Node3D).visible = false
 
 
 ## Освещённость точки (0…100) с учётом затухания и стен между светом и точкой.
@@ -1745,7 +1705,7 @@ func light_at(pos: Vector3) -> float:
 		if l == null or not is_instance_valid(l):
 			continue
 		var lp := _light_world_position(l)
-		var r := l.omni_range
+		var r: float = entry.get("reach", l.omni_range)
 		var dist := lp.distance_to(sample)
 		if dist > r:
 			continue
@@ -1917,13 +1877,13 @@ func _prop(type: String, pos: Vector3) -> void:
 			var coals := _sphere(0.25, pos + Vector3(0, 1.75, 0), mat_glow)
 			coals.scale = Vector3(1, 0.4, 1)
 			var light := OmniLight3D.new()
-			light.light_color = Color(1.0, 0.69, 0.43)
-			light.light_energy = 2.8
-			light.omni_range = 8.5
-			light.shadow_enabled = true
+			_style_fire_light(light)
+			light.light_energy = 2.6
+			light.omni_range = 7.5
 			light.position = pos + Vector3(0, 1.9, 0)
 			add_child(light)
-			lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": coals})
+			lights.append({"light": light, "base": 2.6, "seed": randf() * 10.0,
+				"flame": coals, "reach": 8.5})
 		"weapon_rack":
 			_box(Vector3(1.6, 0.1, 0.3), pos + Vector3(0, 1.2, 0), mat_wood)
 			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_beam)
@@ -1998,6 +1958,9 @@ func _process(delta: float) -> void:
 		ripple_color.a = (1.0 - phase) * 0.32
 		ripple_mat.albedo_color = ripple_color
 	for l in lights:
+		# факелы из torch.tscn мерцают сами (torch_flicker.gd)
+		if l.get("self_flicker", false):
+			continue
 		var s: float = l["seed"]
 		var base: float = l["base"]
 		l["light"].light_energy = base * (0.86 + 0.1 * sin(t * 7.1 + s) + 0.06 * sin(t * 17.3 + s * 2.0))
@@ -2021,11 +1984,13 @@ func _process(delta: float) -> void:
 			ranked.append({"l": li, "d": _light_world_position(li).distance_to(center)})
 		ranked.sort_custom(func(a, b): return a["d"] < b["d"])
 		for i in ranked.size():
-			ranked[i]["l"].shadow_enabled = i < 4 and ranked[i]["d"] < 15.0
+			ranked[i]["l"].shadow_enabled = i < shadow_budget and ranked[i]["d"] < 15.0
 
 
-## Настенный факел: кронштейн и чаша примитивами, пламя и свет в зал.
-func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
+## Настенный факел: общая сцена torch.tscn на кронштейне у грани стены.
+## Тени включает лимитер в _process (shadow_budget ближайших к герою).
+func _wall_torch(open_cell: Vector2i, d: Vector2i, _shadows := false,
+		reach := TORCH_REACH) -> bool:
 	var wall_cell := open_cell + d
 	var face_dir := Vector2i(-d.x, -d.y)
 	var xf := _face_xform([wall_cell], face_dir)
@@ -2033,47 +1998,39 @@ func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
 		"pos": xf.origin + Vector3(0.0, 1.72, 0.0),
 		"normal": -xf.basis.z,
 	}
-	var root := _wall_root(anchor)
-	_box(Vector3(0.28, 0.46, 0.08), Vector3(0.0, 0.22, 0.04), mat_metal, root)
-	_box(Vector3(0.08, 0.08, 0.28), Vector3(0.0, 0.38, 0.18), mat_metal, root)
-	_cyl(0.055, 0.54, Vector3(0.0, 0.72, 0.3), mat_wood, root)
-	_cyl(0.17, 0.12, Vector3(0.0, 1.04, 0.3), mat_metal, root)
-	var flame := Node3D.new()
-	flame.position = Vector3(0.0, 1.12, 0.3)
-	root.add_child(flame)
-	var outer := MeshInstance3D.new()
-	var fmesh := CylinderMesh.new()
-	fmesh.top_radius = 0.012
-	fmesh.bottom_radius = 0.1
-	fmesh.height = 0.36
-	fmesh.radial_segments = 7
-	outer.mesh = fmesh
-	outer.position = Vector3(0.0, 0.12, 0.0)
-	outer.material_override = mat_flame
-	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(outer)
-	var core := MeshInstance3D.new()
-	var cmesh := CylinderMesh.new()
-	cmesh.top_radius = 0.006
-	cmesh.bottom_radius = 0.05
-	cmesh.height = 0.2
-	cmesh.radial_segments = 6
-	core.mesh = cmesh
-	core.position = Vector3(0.0, 0.04, 0.0)
-	core.material_override = mat_flame_core
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(core)
-	flames.append(flame)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.76, 0.54)
-	light.light_energy = 3.1
-	light.omni_range = 10.0
-	light.omni_attenuation = 1.0
-	light.shadow_enabled = shadows
-	light.position = Vector3(0.0, 1.42, 0.3)
-	root.add_child(light)
-	lights.append({"light": light, "base": 3.1, "seed": randf() * 10.0})
+	_spawn_torch(_wall_root(anchor), Transform3D.IDENTITY, reach)
 	return true
+
+
+## Экземпляр torch.tscn. Лампа мерцает сама (torch_flicker.gd), поэтому в
+## lights она помечена self_flicker; reach — дальность света для стражи.
+func _spawn_torch(parent: Node3D, xform: Transform3D, reach: float,
+		energy := 2.5) -> Node3D:
+	var torch: Node3D = TORCH_SCENE.instantiate()
+	torch.transform = xform
+	parent.add_child(torch)
+	var light: OmniLight3D = torch.get_node("Light")
+	light.set("base_energy", energy)
+	light.shadow_enabled = false
+	lights.append({"light": light, "base": energy, "seed": 0.0, "reach": reach,
+		"self_flicker": true})
+	return torch
+
+
+## Огонь жаровни — те же параметры лампы, что у факела в torch.tscn.
+func _style_fire_light(light: OmniLight3D) -> void:
+	light.light_color = Color(1.0, 0.6, 0.32)
+	light.omni_attenuation = 1.5
+	light.shadow_enabled = false
+	light.light_size = 0.08
+	light.shadow_bias = 0.03
+	light.shadow_normal_bias = 1.0
+	light.light_volumetric_fog_energy = 2.0
+	light.light_specular = 0.6
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = 25.0
+	light.distance_fade_shadow = 15.0
+	light.distance_fade_length = 8.0
 
 
 ## Настенный факел у ближайшей грани стены. Если стены рядом нет — false,
@@ -2174,3 +2131,57 @@ func _add_kill_zone() -> void:
 			if body.has_method("respawn_to_safe"):
 				body.respawn_to_safe()
 	)
+
+
+## Атмосферные факелы вдоль стен с шагом ~spacing м (этап 6): пятна света с
+## тёмными промежутками вместо ровной заливки. Обход детерминированный, так
+## что расстановка одинакова при каждом запуске. reach = 0: эти факелы не
+## входят в light_at, баланс скрытности остаётся как до этапа 6.
+func _place_torches(spacing := 8.0, max_count := 70) -> void:
+	var placed := 0
+	for y in map_h:
+		for x in map_w:
+			if placed >= max_count:
+				continue
+			var c := Vector2i(x, y)
+			if not _is_open_cell(c):
+				continue
+			for d in SIDES:
+				if not _wall_at(c, d):
+					continue
+				var pos := cell_center(x, y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+				if _light_near(pos, spacing):
+					break
+				_wall_torch(c, d, false, 0.0)
+				placed += 1
+				break
+	print("TORCHES atmospheric=", placed)
+
+
+## Подвесные чаши с огнём в глубине больших залов, куда не достают настенные
+## факелы (dist >= 3 клеток от стены). Висят на цепи под сводом: проход не
+## перекрывают, коллизия не нужна. reach = 0, как у атмосферных факелов.
+func _place_hanging_fires(spacing := 10.0, max_count := 12) -> void:
+	var placed := 0
+	for y in map_h:
+		for x in map_w:
+			var c := Vector2i(x, y)
+			if placed >= max_count or not _is_open_cell(c) or int(dist[y][x]) < 2:
+				continue
+			var pos := cell_center(x, y)
+			if _light_near(pos + Vector3(0, 1.6, 0), spacing):
+				continue
+			var top: float = cell_ceil(x, y)
+			var cup_y: float = minf(3.1, top - 1.2)
+			var root := Node3D.new()
+			root.position = pos
+			add_child(root)
+			_box(Vector3(0.04, top - cup_y, 0.04),
+				Vector3(0, (top + cup_y) * 0.5, 0), mat_metal, root)
+			_cyl(0.22, 0.14, Vector3(0, cup_y, 0), mat_metal, root)
+			# пламя сцены на (0, 1.1, 0.3): садим его на край чаши
+			var fire := _spawn_torch(root,
+				Transform3D(Basis.IDENTITY, Vector3(0, cup_y - 1.02, -0.3)), 0.0, 2.8)
+			(fire.get_node("Mesh") as Node3D).visible = false
+			placed += 1
+	print("TORCHES hanging=", placed)

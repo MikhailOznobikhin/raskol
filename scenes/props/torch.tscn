@@ -1,0 +1,200 @@
+[gd_scene load_steps=26 format=3]
+
+[ext_resource type="Material" path="res://materials/iron.tres" id="1_oappy"]
+[ext_resource type="Material" path="res://materials/wood_planks.tres" id="2_mvr0m"]
+[ext_resource type="Script" path="res://scenes/props/torch_flicker.gd" id="3_715gs"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_phs1q"]
+size = Vector3(0.28, 0.46, 0.08)
+
+[sub_resource type="BoxMesh" id="BoxMesh_h3ex4"]
+size = Vector3(0.08, 0.08, 0.28)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_872hm"]
+top_radius = 0.045
+bottom_radius = 0.055
+height = 0.54
+radial_segments = 10
+rings = 1
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_u6r2k"]
+top_radius = 0.17
+bottom_radius = 0.11
+height = 0.12
+radial_segments = 10
+rings = 1
+
+[sub_resource type="Gradient" id="Gradient_3dyab"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(1, 0.85, 0.5, 1, 1, 0.45, 0.1, 0.85, 0.35, 0.04, 0, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_vrkam"]
+gradient = SubResource("Gradient_3dyab")
+
+[sub_resource type="Curve" id="Curve_5lm7u"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_ixgdu"]
+curve = SubResource("Curve_5lm7u")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_ye0sk"]
+emission_shape = 1
+emission_sphere_radius = 0.04
+direction = Vector3(0, 1, 0)
+spread = 10.0
+initial_velocity_min = 0.3
+initial_velocity_max = 0.6
+gravity = Vector3(0, 0.5, 0)
+scale_curve = SubResource("CurveTexture_ixgdu")
+color_ramp = SubResource("GradientTexture1D_vrkam")
+
+[sub_resource type="Gradient" id="Gradient_wa8ay"]
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_f8t36"]
+gradient = SubResource("Gradient_wa8ay")
+width = 32
+height = 32
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_21csd"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = SubResource("GradientTexture2D_f8t36")
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_yfuop"]
+material = SubResource("StandardMaterial3D_21csd")
+size = Vector2(0.15, 0.15)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f1jms"]
+albedo_color = Color(0, 0, 0, 1)
+emission_enabled = true
+emission = Color(1, 0.6, 0.25, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_3bcff"]
+radius = 0.045
+height = 0.12
+radial_segments = 8
+rings = 4
+
+[sub_resource type="Gradient" id="Gradient_kejft"]
+offsets = PackedFloat32Array(0, 0.7, 1)
+colors = PackedColorArray(1, 0.75, 0.35, 1, 1, 0.4, 0.08, 0.8, 0.6, 0.1, 0, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_41glv"]
+gradient = SubResource("Gradient_kejft")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_do71u"]
+emission_shape = 1
+emission_sphere_radius = 0.05
+direction = Vector3(0, 1, 0)
+spread = 30.0
+initial_velocity_min = 0.25
+initial_velocity_max = 0.55
+gravity = Vector3(0, 0.15, 0)
+color_ramp = SubResource("GradientTexture1D_41glv")
+turbulence_enabled = true
+turbulence_noise_strength = 0.4
+turbulence_noise_scale = 1.5
+
+[sub_resource type="Gradient" id="Gradient_ieq86"]
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_7r6rr"]
+gradient = SubResource("Gradient_ieq86")
+width = 32
+height = 32
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_35xeh"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = SubResource("GradientTexture2D_7r6rr")
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_v1iyj"]
+material = SubResource("StandardMaterial3D_35xeh")
+size = Vector2(0.025, 0.025)
+
+[node name="Torch" type="Node3D"]
+
+[node name="Mesh" type="Node3D" parent="."]
+
+[node name="Plate" type="MeshInstance3D" parent="Mesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.22, 0.04)
+material_override = ExtResource("1_oappy")
+mesh = SubResource("BoxMesh_phs1q")
+
+[node name="Arm" type="MeshInstance3D" parent="Mesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38, 0.18)
+material_override = ExtResource("1_oappy")
+mesh = SubResource("BoxMesh_h3ex4")
+
+[node name="Stick" type="MeshInstance3D" parent="Mesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.72, 0.3)
+material_override = ExtResource("2_mvr0m")
+mesh = SubResource("CylinderMesh_872hm")
+
+[node name="Cup" type="MeshInstance3D" parent="Mesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.04, 0.3)
+material_override = ExtResource("1_oappy")
+mesh = SubResource("CylinderMesh_u6r2k")
+
+[node name="Flame" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0.3)
+cast_shadow = 0
+amount = 24
+lifetime = 0.6
+visibility_aabb = AABB(-0.4, -0.2, -0.4, 0.8, 1, 0.8)
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_ye0sk")
+draw_pass_1 = SubResource("QuadMesh_yfuop")
+
+[node name="FlameCore" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0.3)
+material_override = SubResource("StandardMaterial3D_f1jms")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_3bcff")
+
+[node name="Embers" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, 0.3)
+cast_shadow = 0
+amount = 6
+lifetime = 1.5
+visibility_aabb = AABB(-0.8, -0.2, -0.8, 1.6, 2, 1.6)
+process_material = SubResource("ParticleProcessMaterial_do71u")
+draw_pass_1 = SubResource("QuadMesh_v1iyj")
+
+[node name="Light" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.38, 0.3)
+light_color = Color(1, 0.6, 0.32, 1)
+light_energy = 2.5
+light_volumetric_fog_energy = 2.0
+light_size = 0.08
+light_specular = 0.6
+shadow_enabled = true
+shadow_bias = 0.03
+distance_fade_enabled = true
+distance_fade_begin = 25.0
+distance_fade_shadow = 15.0
+distance_fade_length = 8.0
+omni_range = 7.0
+omni_attenuation = 1.5
+script = ExtResource("3_715gs")

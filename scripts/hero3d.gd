@@ -105,6 +105,21 @@ func _ready() -> void:
 	col.position = Vector3(0, 0.78, 0)
 	add_child(col)
 	_build_rig()
+	_add_readability_light()
+
+
+## Едва заметная тёплая лампа над-перед гномом: в тёмном коридоре он не
+## превращается в чёрный силуэт. Висит на риге (вперёд — -Z), без теней.
+func _add_readability_light() -> void:
+	var lamp := OmniLight3D.new()
+	lamp.name = "ReadabilityLight"
+	lamp.light_color = Color(1.0, 0.75, 0.5)
+	lamp.light_energy = 0.25
+	lamp.omni_range = 3.0
+	lamp.shadow_enabled = false
+	lamp.light_specular = 0.1
+	lamp.position = Vector3(0.0, 1.9, -0.6)
+	rig.add_child(lamp)
 
 
 func _mat(col: Color, rough := 0.8, metal := 0.0) -> StandardMaterial3D:
