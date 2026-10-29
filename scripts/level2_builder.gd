@@ -62,6 +62,8 @@ func build() -> void:
 	_build_sconces()
 	_build_breach()
 	_build_environment()
+	_add_wet_mist()
+	_add_camera_dust()
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +417,29 @@ func _build_water() -> void:
 				_water_curbs(cx, y, curbs)
 		y += 1
 	_ice_multimesh(curbs)
+
+
+## Дымка над рвом крипты (этап 7): одна коробка на все клетки воды и
+## общая дымка над лужами, если они есть.
+func _add_wet_mist() -> void:
+	if not Dungeon.air_fx_on("mist"):
+		super()
+		return
+	var cells := Rect2i()
+	var found := false
+	for y in map_h:
+		for x in map_w:
+			if cell_char(x, y) != "w":
+				continue
+			if found:
+				cells = cells.expand(Vector2i(x, y)).expand(Vector2i(x + 1, y + 1))
+			else:
+				cells = Rect2i(x, y, 1, 1)
+				found = true
+	if found:
+		var area := Rect2(Vector2(cells.position) * T, Vector2(cells.size) * T)
+		_add_ground_mist(Vector3(area.get_center().x, 0.0, area.get_center().y), area.size)
+	super()
 
 
 func _water_curbs(x: int, y: int, curbs: Array) -> void:

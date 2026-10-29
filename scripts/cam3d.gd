@@ -54,6 +54,8 @@ const FADE_TIME := 0.15
 const FADE_RANGE := 14.0
 const PROP_MAX_SIZE := 2.5
 
+const POST_FX_SCENE := "res://scenes/fx/post_fx.tscn"
+
 var target: Node3D
 var yaw := 0.0
 var pitch := DEFAULT_PITCH
@@ -137,6 +139,10 @@ func _ready() -> void:
 	# «Походный свет» камеры (белый, 1.7, радиус 12 м) снят на этапе 6: он
 	# ровно заливал всё, на что смотрит игрок, и гасил пятна света факелов.
 	# Силуэт героя держит слабая лампа самого героя (Hero3D._add_readability_light).
+
+	# Виньетка и зерно (этап 7): canvas-слой -1 — поверх 3D, под любым UI.
+	if Dungeon.air_fx_on("post"):
+		add_child((load(POST_FX_SCENE) as PackedScene).instantiate())
 
 	_sync_exclusion()
 	call_deferred("_collect_fade_candidates")

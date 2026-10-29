@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/post_vignette_grain.gdshader" id="1_post"]
+
+[resource]
+shader = ExtResource("1_post")
+shader_parameter/vignette_strength = 0.35
+shader_parameter/vignette_radius = 0.95
+shader_parameter/grain_strength = 0.02
