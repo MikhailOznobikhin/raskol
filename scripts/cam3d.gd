@@ -53,6 +53,16 @@ const PROP_ALPHA := 0.7
 const FADE_TIME := 0.15
 const FADE_RANGE := 14.0
 const PROP_MAX_SIZE := 2.5
+## «Дыхание» в покое (этап 9): пивот кивает на ±0.3° с частотой 0.25 Гц.
+## Выключается вместе с покачиванием (Settings.camera_bob = 0).
+const SWAY_PITCH := deg_to_rad(0.3)
+const SWAY_HZ := 0.25
+## Тряска от удара молотом: травма 0..1 крутит пивот до 0.6° (квадрат
+## травмы — слабые удары почти не видны) и гаснет с 1 до 0 за 0.25 с.
+const TRAUMA_MAX_ROT := deg_to_rad(0.6)
+const TRAUMA_DECAY := 1.0 / 0.25
+## Скорость бега по шуму: ~20 рывков в секунду — дрожь, а не качка.
+const TRAUMA_NOISE_SPEED := 20.0
 
 const POST_FX_SCENE := "res://scenes/fx/post_fx.tscn"
 
@@ -80,6 +90,13 @@ var bob_t := 0.0
 var bob_amp := 0.0
 ## Текущая (сглаженная) длина основной пружины, м.
 var arm_length := ARM_LENGTH
+var trauma := 0.0
+## Поворот «жизни» камеры (дыхание + травма) поверх yaw/pitch игрока.
+var _life_rot := Vector3.ZERO
+var _sway_t := 0.0
+var _sway_w := 0.0
+var _trauma_t := 0.0
+var _trauma_noise := FastNoiseLite.new()
 
 ## RID героя, исключённый из обеих пружин (иначе камера липнет к его капсуле).
 var _excluded_rid := RID()
@@ -95,6 +112,8 @@ var _fade_alpha := {}
 
 func _ready() -> void:
 	add_to_group("cam")
+	_trauma_noise.seed = randi()
+	_trauma_noise.frequency = 1.0
 	shoulder = SpringArm3D.new()
 	shoulder.name = "ShoulderArm"
 	# Пружина тянет детей по своему локальному +Z, поэтому поворот на +90°
@@ -163,16 +182,16 @@ func _physics_process(delta: float) -> void:
 		_sync_exclusion()
 		_update_pivot(delta)
 		_apply_gamepad_look(delta)
-	rotation = Vector3(pitch, yaw, 0)
+	rotation = Vector3(pitch, yaw, 0) + _life_rot
 	_update_arm(delta)
 	_update_props(delta)
 	_update_hero_visibility()
 
 
 func _process(delta: float) -> void:
+	var speed := 0.0
 	if target and is_instance_valid(target):
 		# на беге камера чуть расширяет угол — добавляет ощущение скорости
-		var speed := 0.0
 		if target is CharacterBody3D:
 			var v: Vector3 = (target as CharacterBody3D).velocity
 			speed = Vector2(v.x, v.z).length()
@@ -199,6 +218,40 @@ func _process(delta: float) -> void:
 	# покачивание добавляем поверх тряски: position камеры принадлежит SpringArm3D
 	camera.h_offset += sin(bob_t) * bob_amp * 0.25
 	camera.v_offset += sin(bob_t * 2.0) * bob_amp
+	_update_life(delta, speed)
+	# и в кадре отрисовки: физический такт (60 Гц) реже кадра, без этого
+	# дыхание и травма шли бы ступеньками
+	rotation = Vector3(pitch, yaw, 0) + _life_rot
+
+
+## Дыхание стоящего героя и поворотная тряска от удара (этап 9).
+## Оба слагаемых — поворот пивота, а не смещение камеры: смещение вбок у
+## стены просовывало кадр в кладку, поворот пружина отрабатывает сама.
+func _update_life(delta: float, speed: float) -> void:
+	var breathe: bool = speed < 0.3 and Settings.camera_bob > 0.001
+	# вес дыхания набирается за ~1.5 с: шаг→стоп не дёргает кадр
+	_sway_w = move_toward(_sway_w, 1.0 if breathe else 0.0, delta / 1.5)
+	_sway_t = fmod(_sway_t + delta, 1.0 / SWAY_HZ)
+	var sway: float = sin(_sway_t * TAU * SWAY_HZ) * SWAY_PITCH * _sway_w
+	trauma = maxf(trauma - TRAUMA_DECAY * delta, 0.0)
+	var k: float = trauma * trauma * TRAUMA_MAX_ROT
+	var shake_rot := Vector3.ZERO
+	if k > 0.0:
+		_trauma_t += delta * TRAUMA_NOISE_SPEED
+		# симплекс-шум редко выходит за ±0.5: ×2 и обрезка — пик действительно 0.6°
+		shake_rot = (Vector3(
+			_trauma_noise.get_noise_2d(_trauma_t, 0.0),
+			_trauma_noise.get_noise_2d(_trauma_t, 50.0),
+			_trauma_noise.get_noise_2d(_trauma_t, 100.0)) * 2.0).clamp(-Vector3.ONE, Vector3.ONE) * k
+	_life_rot = Vector3(sway, 0.0, 0.0) + shake_rot
+
+
+## Удар молотом: травма копится и гаснет сама (TRAUMA_DECAY).
+## Настройка «ТРЯСКА КАМЕРЫ: ВЫКЛ» отключает её вместе с shake().
+func add_trauma(amount: float) -> void:
+	if not Settings.camera_shake:
+		return
+	trauma = clampf(trauma + amount, 0.0, 1.0)
 
 
 ## Пивот идёт за героем в физическом такте — в том же, где двигается
@@ -340,7 +393,7 @@ func _sync_exclusion() -> void:
 
 
 func shake(amount: float, duration: float, impact_direction: Vector3 = Vector3.ZERO) -> void:
-	if amount <= 0.0 or duration <= 0.0:
+	if amount <= 0.0 or duration <= 0.0 or not Settings.camera_shake:
 		return
 	if impact_direction.length_squared() > 0.0001:
 		var right: Vector3 = camera.global_transform.basis.x

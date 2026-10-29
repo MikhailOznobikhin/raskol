@@ -19,6 +19,9 @@ var fullscreen := true
 ## оставляем лёгкое (35%), потому что полный bob укачивает в узких коридорах.
 var camera_bob := 0.20
 const BOB_STEPS: Array[float] = [0.0, 0.25, 0.5, 0.75, 1.0]
+## Тряска камеры от ударов, урона и обвалов (Cam3D.shake/add_trauma).
+## Выключение не трогает покачивание и дыхание — у них своя строка.
+var camera_shake := true
 
 ## Общая громкость 0..1. По умолчанию 0 — игра стартует без звука.
 ## В debug-сборке глушим принудительно на каждом запуске (см. _ready).
@@ -90,6 +93,7 @@ func load_settings() -> void:
 	resolution_index = clampi(int(cfg.get_value("video", "resolution", 0)), 0, RESOLUTIONS.size() - 1)
 	fullscreen = bool(cfg.get_value("video", "fullscreen", true))
 	camera_bob = clampf(float(cfg.get_value("camera", "bob", 0.35)), 0.0, 1.0)
+	camera_shake = bool(cfg.get_value("camera", "shake", true))
 	volume = clampf(float(cfg.get_value("audio", "volume", 0.0)), 0.0, 1.0)
 	if _reference_run():
 		return
@@ -106,6 +110,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "resolution", resolution_index)
 	cfg.set_value("video", "fullscreen", fullscreen)
 	cfg.set_value("camera", "bob", camera_bob)
+	cfg.set_value("camera", "shake", camera_shake)
 	cfg.set_value("audio", "volume", volume)
 	cfg.set_value("graphics", "quality", quality)
 	for key in gfx:
@@ -180,6 +185,12 @@ func bob_label() -> String:
 
 func set_camera_bob(value: float) -> void:
 	camera_bob = clampf(value, 0.0, 1.0)
+	save_settings()
+	changed.emit()
+
+
+func toggle_camera_shake() -> void:
+	camera_shake = not camera_shake
 	save_settings()
 	changed.emit()
 
