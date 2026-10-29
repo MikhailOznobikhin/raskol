@@ -704,6 +704,15 @@ func _test_mode() -> void:
 		get_tree().quit()
 		return
 	print("TEST sfx3d pool=", Sfx._pool3d.size())
+	# звук в debug-сборке глушится в Settings._ready, иначе прогон теста и
+	# запуск из редактора бьют по ушам; проверяем, что шина действительно тихая
+	var master := AudioServer.get_bus_index("Master")
+	if not AudioServer.is_bus_mute(master) or Settings.volume > 0.001:
+		print("TEST FAIL: звук не выключен на старте (volume=", Settings.volume_label(),
+			", mute=", AudioServer.is_bus_mute(master), ")")
+		get_tree().quit()
+		return
+	print("TEST audio muted=true volume=", Settings.volume_label())
 	m._absorb(m.fleshes[0])
 	await get_tree().create_timer(0.3).timeout
 	print("TEST absorb magic=", GameState.magic, " craving=", GameState.craving)
