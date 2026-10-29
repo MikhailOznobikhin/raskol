@@ -1,5 +1,5 @@
 extends Node
-## Настройки видео: разрешение окна и полноэкранный режим.
+## Настройки: разрешение окна, полноэкранный режим, громкость.
 ## Хранятся в user://settings.cfg, применяются при старте и сразу при изменении.
 
 signal changed
@@ -20,9 +20,20 @@ var fullscreen := true
 var camera_bob := 0.20
 const BOB_STEPS: Array[float] = [0.0, 0.25, 0.5, 0.75, 1.0]
 
+## Общая громкость 0..1. По умолчанию 0 — игра стартует без звука.
+## В debug-сборке глушим принудительно на каждом запуске (см. _ready).
+var volume := 0.0
+const VOLUME_STEPS: Array[float] = [0.0, 0.25, 0.5, 0.75, 1.0]
+
 
 func _ready() -> void:
 	load_settings()
+	# в debug-сборке (редактор, --test3d, --shots) звук всегда выключен на старте,
+	# иначе запуск из редактора бьёт по ушам. Поднять громкость можно в настройках,
+	# но следующий запуск снова тихий.
+	if OS.is_debug_build():
+		volume = 0.0
+	apply_audio()
 	# режим скриншотов (--shots) снимает окно в разрешении из --resolution,
 	# иначе сохранённый user://settings.cfg ломает воспроизводимость кадров
 	if OS.get_cmdline_user_args().has("--shots"):
@@ -37,6 +48,7 @@ func load_settings() -> void:
 	resolution_index = clampi(int(cfg.get_value("video", "resolution", 0)), 0, RESOLUTIONS.size() - 1)
 	fullscreen = bool(cfg.get_value("video", "fullscreen", true))
 	camera_bob = clampf(float(cfg.get_value("camera", "bob", 0.35)), 0.0, 1.0)
+	volume = clampf(float(cfg.get_value("audio", "volume", 0.0)), 0.0, 1.0)
 
 
 func save_settings() -> void:
@@ -44,7 +56,18 @@ func save_settings() -> void:
 	cfg.set_value("video", "resolution", resolution_index)
 	cfg.set_value("video", "fullscreen", fullscreen)
 	cfg.set_value("camera", "bob", camera_bob)
+	cfg.set_value("audio", "volume", volume)
 	cfg.save(CONFIG_PATH)
+
+
+## Громкость через шину Master: Sfx, Voice и лупы идут в неё,
+## поэтому одного места хватает на музыку, шаги и озвучку.
+func apply_audio() -> void:
+	var bus := AudioServer.get_bus_index("Master")
+	if bus < 0:
+		return
+	AudioServer.set_bus_mute(bus, volume <= 0.001)
+	AudioServer.set_bus_volume_db(bus, linear_to_db(clampf(volume, 0.001, 1.0)))
 
 
 ## Применяет настройки к окну. 3D рендерится в размер окна,
@@ -119,3 +142,31 @@ func cycle_camera_bob(step: int) -> void:
 				set_camera_bob(BOB_STEPS[i])
 				return
 		set_camera_bob(0.0)
+
+
+func volume_label() -> String:
+	if volume <= 0.001:
+		return "ВЫКЛ"
+	return "%d%%" % int(round(volume * 100.0))
+
+
+func set_volume(value: float) -> void:
+	volume = clampf(value, 0.0, 1.0)
+	save_settings()
+	apply_audio()
+	changed.emit()
+
+
+func cycle_volume(step: int) -> void:
+	if step > 0:
+		for v in VOLUME_STEPS:
+			if v > volume + 0.001:
+				set_volume(v)
+				return
+		set_volume(1.0)
+	else:
+		for i in range(VOLUME_STEPS.size() - 1, -1, -1):
+			if VOLUME_STEPS[i] < volume - 0.001:
+				set_volume(VOLUME_STEPS[i])
+				return
+		set_volume(0.0)

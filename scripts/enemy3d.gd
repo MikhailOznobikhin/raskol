@@ -121,6 +121,8 @@ func _ready() -> void:
 	_update_health_bar()
 	_build_hurtbox()
 	_add_blob_shadow(0.5 if not is_boss else 0.9)
+	# Тот же слой, что у героя: декали луж и копоти не красят стражу.
+	ModelUtil.set_visual_layer(self, ModelUtil.CHARACTER_LAYER)
 
 
 func _mat(c: Color, rough := 0.8, metal := 0.0) -> StandardMaterial3D:
@@ -853,8 +855,8 @@ func _build_anim_tree() -> void:
 			attack_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("AttackClip", attack_node)
 		var attack_shot := AnimationNodeOneShot.new()
-		attack_shot.fadein_time = 0.15
-		attack_shot.fadeout_time = 0.15
+		attack_shot.fadein_time = 0.12
+		attack_shot.fadeout_time = 0.18
 		blend_tree.add_node("AttackShot", attack_shot)
 		blend_tree.connect_node("AttackShot", 0, base)
 		blend_tree.connect_node("AttackShot", 1, "AttackClip")
@@ -915,6 +917,11 @@ func _animate_model(dt: float) -> void:
 			ModelUtil.play_key(anim, ["Attack"], false, 1.3)
 		active_anim_action = "attack"
 		return
+	# как и у героя: пока AttackShot играет, база (шаг) стоит — гасим его,
+	# если состояние атаки сменилось раньше конца клипа (стан, отбрасывание)
+	if anim_tree != null and anim_has_attack and active_anim_action == "attack":
+		anim_tree.set("parameters/AttackShot/request",
+			AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
 	active_anim_action = ""
 	if anim_tree == null:
 		if sp > 0.25:

@@ -41,6 +41,8 @@ var arch_parts: Array = []
 
 
 func build() -> void:
+	# теней на уровне 2 не больше трёх: это проверяет level2_play (SHADOW_BUDGET)
+	shadow_budget = 3
 	_materials()
 	_load_map()
 	_shapes()
@@ -249,8 +251,15 @@ func _add_dais_ramp(minx: int, miny: int, maxx: int, maxy: int) -> void:
 	mi.mesh = _wedge(wide, length, DAIS_H)
 	# на клин пандуса нужен двусторонний материал, а шейдерный камень
 	# односторонний: для одной детали проще собрать обычный материал
-	var wm: StandardMaterial3D = _make_mat(
-		"stone_wall", Color(0.88, 0.87, 0.9), 0.88, 0.0, 0.4)
+	# _make_mat() удалён на этапе 4 вместе с inline-материалами Dungeon
+	var wm := StandardMaterial3D.new()
+	wm.albedo_texture = _tex3d("stone_wall_albedo")
+	wm.albedo_color = Color(0.88, 0.87, 0.9)
+	wm.normal_enabled = true
+	wm.normal_texture = _tex3d("stone_wall_normal")
+	wm.roughness = 0.88
+	wm.uv1_triplanar = true
+	wm.uv1_scale = Vector3(0.4, 0.4, 0.4)
 	wm.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = wm
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -354,12 +363,18 @@ func _im_face(im: ImmediateMesh, pts: Array, n: Vector3) -> void:
 # вода затопленного зала
 # ---------------------------------------------------------------------------
 
+## Текстура из res://assets/tex3d (бывший Dungeon._tex, удалён на этапе 4).
+func _tex3d(tex_name: String) -> Texture2D:
+	var path := "res://assets/tex3d/%s.png" % tex_name
+	return load(path) if ResourceLoader.exists(path) else null
+
+
 func _build_water() -> void:
 	if water_cells.is_empty():
 		return
 	mat_water = StandardMaterial3D.new()
-	var a := _tex("stone_floor_albedo")
-	var n := _tex("stone_floor_normal")
+	var a := _tex3d("stone_floor_albedo")
+	var n := _tex3d("stone_floor_normal")
 	if a:
 		mat_water.albedo_texture = a
 	if n:
@@ -622,63 +637,14 @@ func _build_sconces() -> void:
 
 
 func _sconce(pos: Vector3, dir: Vector2i) -> void:
+	# Бра — общая сцена torch.tscn (этап 6). Кронштейн сцены крепится к грани
+	# стены (локально z = -0.3 от точки бра), пламя остаётся на прежней высоте.
 	var root := Node3D.new()
 	root.position = pos
 	root.rotation.y = atan2(float(-dir.x), float(-dir.y))
 	add_child(root)
-	_box(Vector3(0.12, 0.12, 0.42), Vector3(0, 0.0, 0.16), mat_metal, root)
-	_box(Vector3(0.1, 0.36, 0.1), Vector3(0, 0.18, 0.34), mat_metal, root)
-	_cyl(0.16, 0.16, Vector3(0, 0.36, 0.34), mat_metal, root)
-	var flame := Node3D.new()
-	flame.position = Vector3(0, 0.46, 0.34)
-	root.add_child(flame)
-	var outer := MeshInstance3D.new()
-	var fm := CylinderMesh.new()
-	fm.top_radius = 0.01
-	fm.bottom_radius = 0.09
-	fm.height = 0.3
-	fm.radial_segments = 7
-	outer.mesh = fm
-	outer.material_override = mat_flame
-	outer.position = Vector3(0, 0.1, 0)
-	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(outer)
-	var core := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.005
-	cm.bottom_radius = 0.045
-	cm.height = 0.16
-	cm.radial_segments = 6
-	core.mesh = cm
-	core.material_override = mat_flame_core
-	core.position = Vector3(0, 0.02, 0)
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(core)
-	var halo := MeshInstance3D.new()
-	var hq := QuadMesh.new()
-	hq.size = Vector2(0.6, 0.6)
-	halo.mesh = hq
-	var hm := StandardMaterial3D.new()
-	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.albedo_color = Color(1.0, 0.5, 0.18, 0.5)
-	hm.albedo_texture = _radial_glow_texture()
-	halo.material_override = hm
-	halo.position = Vector3(0, 0.12, 0)
-	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(halo)
-	flames.append(flame)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.62, 0.28)
-	light.light_energy = 4.6
-	light.omni_range = 14.0
-	light.omni_attenuation = 1.0
-	light.shadow_enabled = false
-	light.position = Vector3(0, 0.62, 0.4)
-	root.add_child(light)
-	lights.append({"light": light, "base": 4.0, "seed": randf() * 10.0, "flame": flame})
+	# reach 14 — прежний радиус бра: дальность для стражи не меняем
+	_spawn_torch(root, Transform3D(Basis.IDENTITY, Vector3(0, -0.64, -0.3)), 14.0)
 
 
 # ---------------------------------------------------------------------------
@@ -809,52 +775,31 @@ func _build_breach() -> void:
 			Vector3(p.x + cos(ang) * rad, top - rng.randf_range(0.0, 0.3),
 				p.z + sin(ang) * rad), mat_wall)
 	var shaft := SpotLight3D.new()
-	shaft.light_color = Color(0.66, 0.74, 0.95)
-	shaft.light_energy = 4.0
+	# Пролом к небу — настоящий источник: холодный слабый луч с тенями (этап 6;
+	# было 4.0 без теней). Конус в тумане держит volumetric_fog_energy.
+	shaft.light_color = Color(0.45, 0.55, 0.75)
+	shaft.light_energy = 1.0
+	shaft.light_volumetric_fog_energy = 4.0
 	shaft.spot_range = 13.0
 	shaft.spot_angle = 34.0
-	shaft.shadow_enabled = false
+	shaft.shadow_enabled = true
+	shaft.shadow_bias = 0.03
 	shaft.position = Vector3(p.x, top + 3.2, p.z)
 	shaft.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 	add_child(shaft)
 
 
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.012, 0.016, 0.024)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.34, 0.42, 0.58)
-	env.ambient_light_energy = 0.82
-	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.28
-	env.glow_enabled = true
-	env.glow_intensity = 0.5
-	env.glow_bloom = 0.07
-	env.glow_hdr_threshold = 1.05
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.06, 0.08, 0.12)
-	env.fog_density = 0.014
-	env.ssao_enabled = true
-	env.ssao_radius = 1.6
-	env.ssao_intensity = 1.4
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.02
-	env.volumetric_fog_albedo = Color(0.6, 0.68, 0.82)
-	env.volumetric_fog_anisotropy = 0.62
-	env.volumetric_fog_length = 44.0
-	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.18
-	env.adjustment_saturation = 1.04
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
+	# Общее окружение уровней (этап 6). Своё Environment уровня 2 (ambient
+	# 0.82, exposure 1.28) и заполняющий DirectionalLight3D 0.22 сняты: они
+	# давали ровный серо-голубой вид. Заполнение — в скрытом _deprecated.
+	add_child(Dungeon.make_world_environment())
 	var fill := DirectionalLight3D.new()
 	fill.light_color = Color(0.55, 0.64, 0.88)
 	fill.light_energy = 0.22
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-48.0, -24.0, 0.0)
-	add_child(fill)
+	_deprecated_root().add_child(fill)
 
 
 func _process(delta: float) -> void:

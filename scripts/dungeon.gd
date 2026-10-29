@@ -26,6 +26,25 @@ const COVE_SEG := 6
 ## а лицевая кладка на 1.901 м глубже. Сдвигаем модуль в зал, чтобы кирпич
 ## встал на плоскость грани, а свод ушёл в комнату на этот же метр с лишним.
 const WALL_SHIFT := -1.901
+## Общая сцена факела (этап 6): пламя-частицы, мерцающая лампа с мягкой тенью.
+const TORCH_SCENE := preload("res://scenes/props/torch.tscn")
+## Общее окружение всех уровней (этап 6).
+const ENV_PATH := "res://environment/dungeon_env.tres"
+## Дальность «света» факела для стражи (light_at) — игровая величина, а не
+## визуальная: радиус лампы сократили до 7 м, баланс скрытности прежний.
+const TORCH_REACH := 10.0
+## SDFGI выключен по умолчанию (этап 6: почти не виден, -10..20 % FPS);
+## включает будущее меню качества.
+static var gi_enabled := false
+## Лужи — проецирующие декали (res://scenes/props/puddle.tscn), а не плоскости.
+const PUDDLE_SCENE := "res://scenes/props/puddle.tscn"
+## Центр коробки декали над полом: коробка обязана пересекать поверхность,
+## иначе проекция начинается ровно на ней и лужа обрезается по краю.
+const PUDDLE_LIFT := 0.1
+## Старые лужи были PlaneMesh на 0.025 м: они висели НАД полом и читались
+## синими пятнами. Код оставлен под флагом для A/B-сравнения; включённые
+## узлы уходят в скрытый _deprecated, а не удаляются.
+const LEGACY_PUDDLE_PLANES := false
 
 var lines: Array = []
 var map_w := 0
@@ -50,6 +69,8 @@ var mat_wall: ShaderMaterial
 var mat_ceil: Material
 var mat_metal: StandardMaterial3D
 var mat_wood: StandardMaterial3D
+## Структурный брус: каркасы, полки, настилы. Темнее досок бочек и ящиков.
+var mat_beam: StandardMaterial3D
 var mat_dark: StandardMaterial3D
 var mat_glow: StandardMaterial3D
 var mat_flame: StandardMaterial3D
@@ -60,12 +81,18 @@ var mat_banner: StandardMaterial3D
 ## Светлый тёсаный камень: плинт и карниз.
 var mat_cap: ShaderMaterial
 ## Свод и потолок: кладка пака по метрическим UV, без трипланара.
-var mat_vault: StandardMaterial3D
+var mat_vault: Material
 ## Кирпич набора: ступени и заливка пустот за кладкой.
-var mat_brick: StandardMaterial3D
+var mat_brick: Material
+## Кладка обшивки стен и арок набора: UV меша, 3.66 множителя на 512 px/м.
+var mat_brick_kit: Material
+## Плиты пола набора: UV меша, коббл 10–20 см.
+var mat_floor_kit: Material
 var lights: Array = []
 var flames: Array = []
 var shadow_t := 0.0
+## Сколько ближайших к герою огней отбрасывают тени одновременно.
+var shadow_budget := 6
 var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
 ## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
@@ -78,8 +105,11 @@ var kit_ok := false
 var _arch_open := {}
 ## Материалы стволов колонн: ключ — округлённые (радиус, высота).
 var _pier_mats := {}
-## Материал заплаток земли с приглушённым альбедо (см. _dirt_material).
-var _mat_dirt: Material = null
+## Заплатки земли на полу залов (res://materials/floor_dirt.tres).
+var mat_dirt: Material
+## Поставленные лужи-декали: чтобы не класть два пятна в одну точку.
+var puddles: Array[Node3D] = []
+var _puddle_packed: PackedScene
 
 
 func _ready() -> void:
@@ -90,8 +120,9 @@ func _ready() -> void:
 
 
 func build() -> void:
-	_load_kit()
+	# Материалы первыми: _load_kit сразу вешает их на меши набора.
 	_materials()
+	_load_kit()
 	_load_map()
 	_shapes()
 	_build_floor()
@@ -103,8 +134,13 @@ func build() -> void:
 	_build_props()
 	_dress_rooms()
 	_scatter_torches()
+	_add_torch_puddles()
+	_place_torches()
+	_place_hanging_fires()
 	_build_environment()
+	_build_reflection_probes()
 	_add_atmosphere()
+	print("PUDDLES decals=", puddles.size(), " legacy=", LEGACY_PUDDLE_PLANES)
 
 
 ## Загрузка набора модулей. Модули уже стоят в своих системах координат
@@ -130,37 +166,30 @@ func _load_kit() -> void:
 	kit_ok = kit.has("wall_4m") and kit.has("wall_2m") and kit.has("floor_4m")
 	if not kit_ok:
 		push_warning("в наборе dungeon_kit нет нужных модулей")
-	_fix_kit_uv()
+	_apply_kit_materials()
 
 
-## Тексельная плотность модулей набора. Атлас пака (2048 px) покрывает у арки
-## 15 м, у плиты пола — 5.9 м, то есть 134 и 346 px/м рядом со стенами на
-## 512 px/м. Правим множитель UV на самом меше: он общий для всех экземпляров.
-func _fix_kit_uv() -> void:
+## Модули набора получают общие материалы из res://materials/. Раньше у
+## каждого модуля оставался родной glTF-материал с uv1_scale, подогнанным под
+## 512 px/м: масштаб кладки зависел от того, кто и когда правил меш, а у стен
+## и свода не было ни грязи у пола, ни вариации тона. Теперь масштаб —
+## параметр одного материала, общий для всех экземпляров модуля.
+## Тексельная плотность: атлас пака 2048 px покрывает 4 м (0.25 uv/м),
+## ровно как у потолка и гуська.
+func _apply_kit_materials() -> void:
 	for name in ["floor_4m"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 346.0)
+		_set_surface_material(kit.get(name), mat_floor_kit)
 	for name in ["arch_2m", "arch_2m_b"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 134.0)
-	# Стены набора: 140 px/м в исходных UV — кирпич был в 3.7 раза крупнее
-	# кирпича проёма и не совпадал с потолком.
+		_set_surface_material(kit.get(name), mat_brick_kit)
 	for name in ["wall_4m", "wall_4m_b", "wall_2m", "wall_2m_b"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 140.0)
+		_set_surface_material(kit.get(name), mat_brick_kit)
 
 
-func _scale_surface_uv(mesh: Mesh, factor: float) -> void:
-	if mesh == null:
+func _set_surface_material(mesh: Mesh, mat: Material) -> void:
+	if mesh == null or mat == null:
 		return
 	for i in mesh.get_surface_count():
-		var src: Material = mesh.surface_get_material(i)
-		if src is not StandardMaterial3D:
-			continue
-		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
-		m.uv1_scale = m.uv1_scale * factor
-		# В glTF пак помечен двусторонним: изнанка кладки и свода видна как
-		# гладкая плита и пробивается сквозь соседние стены. С отсечением
-		# задних граней сквозь неё видна кирпичная коробка тела стены.
-		m.cull_mode = BaseMaterial3D.CULL_BACK
-		mesh.surface_set_material(i, m)
+		mesh.surface_set_material(i, mat)
 
 
 
@@ -201,101 +230,15 @@ func _cell_hash(x: int, y: int, salt: int = 0) -> int:
 	return absi(h >> 3)
 
 
-func _tex(name: String) -> Texture2D:
-	var path := "res://assets/tex3d/%s.png" % name
+## Общий материал из res://materials/. Материалы — файлы, а не объекты,
+## созданные в коде: правка одного .tres меняет все поверхности сразу, а
+## дифф ресурса виден в git. Пересобрать их — src/make_materials.gd.
+func _mat(mat_name: String) -> Material:
+	var path := "res://materials/%s.tres" % mat_name
 	if not ResourceLoader.exists(path):
+		push_error("нет материала " + path + " (собери tools/make_materials.gd)")
 		return null
 	return load(path)
-
-
-## Текстура из атласов набора Medieval Underground Dungeon.
-func _kit_tex(name: String) -> Texture2D:
-	var path := "res://assets/models/dungeon_kit/textures/%s" % name
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path)
-
-
-## Кирпич по UV меша, без трипланара: нужен своду, где кладка должна идти по
-## дуге, а не проецироваться сверху. COLOR вершин даёт потоновый разброс.
-func _brick_material_uv(uv: float) -> StandardMaterial3D:
-	var m := _brick_material(uv)
-	m.uv1_triplanar = false
-	m.vertex_color_use_as_albedo = true
-	return m
-
-
-## Материал процедурного потолка и ступеней из атласа набора.
-func _brick_material(uv: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var a := _kit_tex("brickwalls_basecolor.jpg")
-	var n := _kit_tex("brickwalls_normal.jpg")
-	var mr := _kit_tex("brickwalls_mr.png")
-	if a != null:
-		m.albedo_texture = a
-	if n != null:
-		m.normal_enabled = true
-		m.normal_texture = n
-		m.normal_scale = 1.0
-	if mr != null:
-		# metallicRoughness набора: зелёный канал — шероховатость, синий — металл.
-		m.roughness_texture = mr
-		m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
-		m.metallic_texture = mr
-		m.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_BLUE
-	# roughness и metallic у StandardMaterial3D — множители карты, а не значения:
-	# нулевой metallic гасит metallic_texture целиком.
-	m.roughness = 1.0
-	m.metallic = 1.0
-	m.metallic_specular = 0.4
-	m.uv1_scale = Vector3(uv, uv, uv)
-	m.uv1_triplanar = true
-	# Встроенный трипланар по умолчанию в локальных координатах: у блоков
-	# стены базис растянут по Y, и кирпич ехал вертикальными полосами.
-	m.uv1_world_triplanar = true
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	return m
-
-
-## Камень: свой трипланар-шейдер, а не StandardMaterial3D. У встроенного
-## трипланара строка текстуры на гранях вдоль X уходит по вертикали, и ряды
-## кладки на половине стен бегут вверх по стене.
-func _make_stone(tex_name: String, tint: Color, rough: float, uv: float,
-		nscale: float) -> ShaderMaterial:
-	var sh: Shader = load("res://assets/shaders/stone_triplanar.gdshader")
-	var m := ShaderMaterial.new()
-	m.shader = sh
-	m.set_shader_parameter("albedo_tex", _tex(tex_name + "_albedo"))
-	m.set_shader_parameter("normal_tex", _tex(tex_name + "_normal"))
-	m.set_shader_parameter("rough_tex", _tex(tex_name + "_rough"))
-	m.set_shader_parameter("tint", tint)
-	m.set_shader_parameter("uv_scale", uv)
-	m.set_shader_parameter("normal_scale", nscale)
-	m.set_shader_parameter("roughness_mult", rough)
-	return m
-
-
-func _make_mat(tex_name: String, tint: Color, rough: float, metal: float, uv: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var a := _tex(tex_name + "_albedo")
-	var n := _tex(tex_name + "_normal")
-	var r := _tex(tex_name + "_rough")
-	if a:
-		m.albedo_texture = a
-	if n:
-		m.normal_enabled = true
-		m.normal_texture = n
-		m.normal_scale = 1.45
-	if r:
-		m.roughness_texture = r
-	m.albedo_color = tint
-	m.roughness = rough
-	m.metallic = metal
-	m.metallic_specular = 0.4
-	m.uv1_scale = Vector3(uv, uv, uv)
-	m.uv1_triplanar = true
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	return m
 
 
 func _materials() -> void:
@@ -303,23 +246,27 @@ func _materials() -> void:
 		push_warning("НЕТ ТЕКСТУР tex3d — стены будут плоскими")
 	# Этап A: у пола, стен, свода и трима разные роли. Холодный пол, тёплый
 	# камень стен и копчёный свод дают иерархию, которой не было у одного tint.
-	# Плотность всех каменных поверхностей сведена к ~512 px/м (текстура
-	# stone_wall 1024 px → плитка 2 м): разброс по уровню был 15×, из-за него
-	# кирпич двери был в 11 раз крупнее кирпича соседней стены.
-	mat_floor = _make_stone("stone_floor", Color(0.87, 0.86, 0.85), 0.68, 0.5, 1.3)
-	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.5, 1.5)
-	# Кирпич набора: ступени, заливка пустот. Атлас 2048 px на 4 м = 512 px/м.
-	mat_brick = _brick_material(0.25)
-	# Потолок и свод — та же кладка пака, что у стен (атлас Brick_Walls
-	# 2048 px, 0.25 uv/м = 512 px/м). Раньше потолок брал stone_wall и в кадре
-	# читался отдельной плиткой, не связанной ни со стенами, ни с гусёком.
-	mat_vault = _brick_material_uv(0.25)
+	# Плотность всех каменных поверхностей ~512 px/м: атлас пака 2048 px на 4 м.
+	# Пол «аварийного» варианта (набор не загрузился) — плоский камень.
+	mat_floor = _mat("floor_stone_plain") as ShaderMaterial
+	# Тесаная кладка: косяки арок и обломки, трипланар по миру.
+	mat_wall = _mat("wall_stone_blocks") as ShaderMaterial
+	# Плиты пола набора и кладка обшивки стен/арок: UV меша.
+	mat_floor_kit = _mat("floor_cobble")
+	mat_brick_kit = _mat("wall_brick")
+	# Кирпич процедурных коробок: тело стены, ступени, стволы колонн.
+	mat_brick = _mat("brick_blocks")
+	# Потолок и свод — та же кладка пака, но на 20 % темнее стен: иначе
+	# потолок становится самой светлой поверхностью кадра.
+	mat_vault = _mat("ceiling_vault")
 	mat_ceil = mat_vault
-	# Тёсаный камень ступеней и порталов. Прежний почти белый тинт в кадре
-	# читался светящимся пластиком рядом с кладкой набора.
-	mat_cap = _make_stone("stone_wall", Color(0.66, 0.6, 0.54), 0.85, 0.5, 1.1)
-	mat_metal = _make_mat("metal", Color(0.8, 0.82, 0.9), 0.45, 0.85, 1.2)
-	mat_wood = _make_mat("wood", Color(0.9, 0.85, 0.8), 0.8, 0.0, 1.0)
+	# Тёсаный камень рёбер, ступеней и порталов: тёмный выветренный камень
+	# одной семьи с кладкой, а не светлые блоки-заглушки.
+	mat_cap = _mat("stone_trim") as ShaderMaterial
+	mat_metal = _mat("iron") as StandardMaterial3D
+	mat_wood = _mat("wood_planks") as StandardMaterial3D
+	mat_beam = _mat("wood_beam") as StandardMaterial3D
+	mat_dirt = _mat("floor_dirt")
 	mat_dark = StandardMaterial3D.new()
 	mat_dark.albedo_color = Color(0.05, 0.05, 0.06)
 	mat_dark.roughness = 0.95
@@ -594,27 +541,6 @@ func _block_has_floor(bx: int, by: int) -> bool:
 	return false
 
 
-## Материал заплатки земли: родной «песок» набора светлее каменного пола и в
-## тёмном зале читается белым листом бумаги. Глушим альбедо до сырой земли,
-## карты набора (normal и metallic-roughness) остаются родными.
-func _dirt_material() -> Material:
-	if _mat_dirt != null:
-		return _mat_dirt
-	var mesh: Mesh = _kit_mesh("dirt", false)
-	if mesh == null or mesh.get_surface_count() == 0:
-		return null
-	var src: Material = mesh.surface_get_material(0)
-	if src is StandardMaterial3D:
-		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
-		# Пол стал светлее после приведения плотности: прежний тёмный тинт
-		# превращал заплатку в чёрную дыру, а не в сырую землю.
-		m.albedo_color = Color(0.52, 0.47, 0.4)
-		_mat_dirt = m
-	else:
-		_mat_dirt = src
-	return _mat_dirt
-
-
 ## Заплатки земли из набора: сбивают регулярность плит, ставятся по одной
 ## на далёкий от стен блок.
 func _scatter_dirt() -> void:
@@ -633,10 +559,12 @@ func _scatter_dirt() -> void:
 			if rng.randf() > 0.12:
 				continue
 			var yaw: float = rng.randf() * TAU
+			# 6 мм над плитой: хватает против мерцания и не видно, что лист лежит
+			# над полом (12 мм на глазного уровне читались парящим листом).
 			var mi := _kit_place("dirt", Transform3D(Basis(Vector3.UP, yaw),
-				Vector3((bx + 1) * T, 0.012, (by + 1) * T)), false)
+				Vector3((bx + 1) * T, 0.006, (by + 1) * T)), false)
 			if mi != null:
-				mi.material_override = _dirt_material()
+				mi.material_override = mat_dirt
 				placed += 1
 	print("FLOOR dirt patches=", placed)
 
@@ -829,22 +757,15 @@ func _cove_strip(st: SurfaceTool, xf: Transform3D, d: Vector2i, y0: float,
 ## Материал ствола колонны: кирпич набора, как у стен, но по цилиндрической
 ## развёртке CylinderMesh (u 0…1 по обводу, v 0…1 по высоте). World-трипланар
 ## на цилиндре смешивал две проекции и гнал курсы кладки веером.
-func _column_material(r: float, h: float) -> StandardMaterial3D:
+func _column_material(r: float, h: float) -> Material:
 	var key := Vector2i(int(round(r * 100.0)), int(round(h * 100.0)))
 	if _pier_mats.has(key):
 		return _pier_mats[key]
-	var m: StandardMaterial3D = null
-	var wall_mesh: Mesh = kit.get("wall_2m")
-	if wall_mesh != null and wall_mesh.get_surface_count() > 0:
-		var src: Material = wall_mesh.surface_get_material(0)
-		if src is StandardMaterial3D:
-			m = (src as StandardMaterial3D).duplicate()
-	if m == null:
-		m = _brick_material_uv(0.25)
-	m.uv1_triplanar = false
-	m.vertex_color_use_as_albedo = false
-	# 2048 px на 4 м: 0.25 uv/м ≈ 512 px/м, как у стен и потолка.
-	m.uv1_scale = Vector3(TAU * r * 0.25, h * 0.25, 1.0)
+	var m: ShaderMaterial = (mat_brick_kit as ShaderMaterial).duplicate()
+	# CylinderMesh: u 0…1 по обводу, v 0…1 по высоте. Плотность 512 px/м
+	# (0.25 uv/м) сохраняется, поэтому курсы кладки на стволе совпадают
+	# с курсами стен.
+	m.set_shader_parameter("uv_scale", Vector2(TAU * r * 0.25, h * 0.25))
 	_pier_mats[key] = m
 	return m
 
@@ -1168,57 +1089,82 @@ func _light_world_position(light: OmniLight3D) -> Vector3:
 
 
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.02, 0.018, 0.016)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	# Холодный заполняющий ambient: синеватый цвет контрастирует с тёплыми
-	# факелами и вытаскивает кладку из черноты, не трогая альбедо текстур.
-	env.ambient_light_color = Color(0.34, 0.42, 0.56)
-	env.ambient_light_energy = 0.48
-	# ACES — кинематографичный тон-маппинг, как в меню игры.
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.35
-	env.glow_enabled = true
-	env.glow_intensity = 0.26
-	env.glow_bloom = 0.035
-	env.glow_hdr_threshold = 1.1
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.085, 0.09, 0.115)
-	# Немного реже Dense fog, чтобы свет доходил дальше
-	env.fog_density = 0.009
-	env.ssao_enabled = true
-	# Контактные тени в стыках кладки: без них камень выглядит пластиком.
-	env.ssao_radius = 1.2
-	env.ssao_intensity = 2.0
-	# SSIL добивает свет в углах и на нижних гранях свода, где ambient слаб.
-	env.ssil_enabled = true
-	env.ssil_radius = 2.0
-	env.ssil_intensity = 1.2
-	env.ssil_sharpness = 0.98
-	# объёмный туман даёт световые конусы от факелов. Плотность 0.02 у мыши
-	# факела героя выбеливала полкадра и прятала кладку набора: свели к 0.01.
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.01
-	# Тёплый туман подхватывает цвет ambient и свет факелов
-	env.volumetric_fog_albedo = Color(0.12, 0.1, 0.08)
-	env.volumetric_fog_emission_energy = 0.0
-	env.volumetric_fog_anisotropy = 0.45
-	env.volumetric_fog_length = 40.0
-	env.adjustment_enabled = true
-	env.adjustment_brightness = 1.04
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 0.88
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	# холодный заполняющий свет: без него коридор утопает в красно-коричневом
+	add_child(make_world_environment())
+	# Заполняющий DirectionalLight3D (0.5, холодный, без теней) снят на этапе 6:
+	# под землёй ему неоткуда светить, и он заливал залы ровным серым. Узел
+	# оставлен в скрытом _deprecated до решения владельца.
 	var fill := DirectionalLight3D.new()
 	fill.light_color = Color(0.58, 0.66, 0.86)
 	fill.light_energy = 0.5
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-55.0, 32.0, 0.0)
-	add_child(fill)
+	_deprecated_root().add_child(fill)
+
+
+## WorldEnvironment с общим dungeon_env.tres — единый вид всех уровней.
+## Ресурс общий: переключатель GI меняет его для всех уровней сразу.
+static func make_world_environment() -> WorldEnvironment:
+	var env: Environment = load(ENV_PATH)
+	# DUNGEON_GI=on|off — быстрый A/B SDFGI (отладка, замер FPS)
+	match OS.get_environment("DUNGEON_GI"):
+		"on":
+			gi_enabled = true
+		"off":
+			gi_enabled = false
+	env.sdfgi_enabled = gi_enabled
+	var we := WorldEnvironment.new()
+	we.name = "WorldEnvironment"
+	we.environment = env
+	return we
+
+
+## Скрытый контейнер для снятых узлов: не рисуется и не обрабатывается.
+func _deprecated_root() -> Node3D:
+	var node := get_node_or_null("_deprecated") as Node3D
+	if node == null:
+		node = Node3D.new()
+		node.name = "_deprecated"
+		node.visible = false
+		node.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(node)
+	return node
+
+
+## Пробники отражений по мокрым залам. SSR видит только то, что попало в
+## кадр, а факел за спиной героя в лужу не отражается — эти пробники
+## дополняют его. UPDATE_ONCE: шесть граней считаются один раз при старте,
+## в каждом кадре пробник ничего не стоит.
+## cull_mask = 1 — персонажи (слой 2) в отражение не запекаются: иначе в
+## луже навсегда остаётся гном, стоявший на старте миссии.
+func _build_reflection_probes() -> void:
+	# Точка, полуразмер по X/Z. Высота берётся из потолка клетки.
+	var rooms := [
+		[Vector3(14.0, 0.0, 60.0), Vector2(14.0, 12.0)],
+		[Vector3(34.0, 0.0, 52.0), Vector2(18.0, 16.0)],
+		[Vector3(70.0, 0.0, 54.0), Vector2(16.0, 16.0)],
+		[Vector3(102.0, 0.0, 40.0), Vector2(18.0, 16.0)],
+		[Vector3(128.0, 0.0, 34.0), Vector2(16.0, 14.0)],
+		[Vector3(112.0, 0.0, 78.0), Vector2(16.0, 14.0)],
+	]
+	for room in rooms:
+		var anchor: Vector3 = room[0]
+		var half: Vector2 = room[1]
+		var c := _nearest_open_cell(anchor)
+		var top: float = cell_ceil(c.x, c.y)
+		var probe := ReflectionProbe.new()
+		probe.size = Vector3(half.x, top, half.y)
+		probe.position = cell_center(c.x, c.y) + Vector3(0.0, top * 0.5, 0.0)
+		# Точка съёмки — на уровне глаз (1.5 м), а не в середине коробки:
+		# иначе отражение свода смотрится сверху вниз и лужа читается зеркалом.
+		probe.origin_offset = Vector3(0.0, 1.5 - top * 0.5, 0.0)
+		probe.interior = true
+		probe.update_mode = ReflectionProbe.UPDATE_ONCE
+		probe.cull_mask = 1
+		# Свет внутрь коробки пробник не добавляет: ambient остаётся уровневый,
+		# пробник даёт только отражения и блик.
+		probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		add_child(probe)
+	print("REFLECT probes=", rooms.size(), " ssr=true")
 
 
 # ---------------------------------------------------------------------------
@@ -1249,17 +1195,30 @@ func _add_light_shafts() -> void:
 		var top: float = cell_ceil(c.x, c.y)
 		var center := cell_center(c.x, c.y)
 		var spot := SpotLight3D.new()
-		spot.light_color = Color(0.55, 0.68, 1.0) if i < 2 \
-			else Color(0.48, 0.78, 0.84) if i == 2 else Color(1.0, 0.62, 0.34)
-		spot.light_energy = 8.0
+		# Холодный слабый акцент против тёплых факелов (этап 6). Было 8.0 и
+		# один оранжевый луч — он и заливал зал ровным рыжим. Конус в тумане
+		# держит light_volumetric_fog_energy, а не яркость на полу.
+		spot.light_color = Color(0.45, 0.55, 0.75)
+		spot.light_energy = 1.0
+		spot.light_volumetric_fog_energy = 4.0
+		spot.light_specular = 0.2
 		spot.spot_range = top + 1.0
 		spot.spot_angle = 30.0
 		spot.spot_attenuation = 1.2
-		spot.shadow_enabled = false
+		spot.shadow_enabled = true
+		spot.shadow_bias = 0.03
+		spot.distance_fade_enabled = true
+		spot.distance_fade_begin = 25.0
+		spot.distance_fade_shadow = 15.0
+		spot.distance_fade_length = 8.0
 		spot.position = center + Vector3(0, top - 0.12, 0)
 		# SpotLight3D светит вдоль -Z; поворот на -90° направляет его вниз.
 		spot.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 		add_child(spot)
+		# Под трещиной мокро: лужа и, у двух залов, капель с потолка.
+		var wet := _puddle_under_crack(center)
+		if not puddles.is_empty() and (i == 0 or i == 2):
+			_add_drip(wet, top)
 		_add_dust(center, top)
 
 
@@ -1296,6 +1255,50 @@ func _add_dust(center: Vector3, top: float) -> void:
 	p.draw_pass_1 = quad
 	p.position = center + Vector3(0, top * 0.5, 0)
 	add_child(p)
+
+
+## Капель с трещины: одна капля раз в 1.5–4 с. Один частичный узел
+## перезапускается таймером — ровный поток читался бы дождём, а не сыростью.
+## Звука капли в проекте ещё нет: сырьё для него — этап 10.
+func _add_drip(pos: Vector3, top: float) -> void:
+	var drop := GPUParticles3D.new()
+	drop.amount = 1
+	drop.lifetime = 1.0
+	drop.one_shot = true
+	drop.local_coords = false
+	drop.position = Vector3(pos.x, top - 0.05, pos.z)
+	drop.visibility_aabb = AABB(Vector3(-1.0, -top - 1.0, -1.0),
+		Vector3(2.0, top + 2.0, 2.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3(0.0, -1.0, 0.0)
+	pm.spread = 0.0
+	pm.initial_velocity_min = 0.2
+	pm.initial_velocity_max = 0.5
+	pm.gravity = Vector3(0.0, -9.8, 0.0)
+	pm.scale_min = 1.0
+	pm.scale_max = 1.0
+	# Капля — вытянутый по Y квад, развёрнутый по вектору скорости: иначе
+	# в кадре мелькает квадратик, а не струйка.
+	pm.particle_flag_align_y = true
+	drop.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.016, 0.085)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.62, 0.72, 0.78, 0.6)
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	quad.material = mat
+	drop.draw_pass_1 = quad
+	add_child(drop)
+	var timer := Timer.new()
+	timer.wait_time = randf_range(1.5, 4.0)
+	timer.autostart = true
+	drop.add_child(timer)
+	timer.timeout.connect(func():
+		drop.restart()
+		timer.wait_time = randf_range(1.5, 4.0)
+	)
 
 
 ## Копоть над огнём, мох у пола и лужицы: процедурные Decal вместо новых
@@ -1716,13 +1719,14 @@ func _brazier_prop(pos: Vector3) -> void:
 	flame.add_child(core)
 	flames.append(flame)
 	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.69, 0.43)
-	light.light_energy = 3.0
-	light.omni_range = 8.5
-	light.shadow_enabled = true
+	_style_fire_light(light)
+	light.light_energy = 2.8
+	light.omni_range = 7.5
 	light.position = Vector3(0, 1.35, 0)
 	root.add_child(light)
-	lights.append({"light": light, "base": 3.0, "seed": randf() * 10.0, "flame": flame})
+	# reach — прежний радиус 8.5 м: дальность для стражи не меняем
+	lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": flame,
+		"reach": 8.5})
 
 
 ## Ткань знамени: простая процедурная текстура с каймой и ромбом. Одна
@@ -1779,68 +1783,16 @@ func _radial_glow_texture() -> GradientTexture2D:
 
 
 func _torch(pos: Vector3) -> void:
-	# стоящий факел: древко от пола, чаша, пламя и тёплый свет
+	# стоящий факел: древко от пола и чаша, огонь и свет — из torch.tscn
 	var root := Node3D.new()
 	root.position = pos
 	add_child(root)
 	_cyl(0.05, 1.9, Vector3(0, 0.95, 0), mat_wood, root)
 	_cyl(0.22, 0.12, Vector3(0, 0.06, 0), mat_metal, root)
-	var bowl := _cyl(0.17, 0.24, Vector3(0, 1.9, 0), mat_metal, root)
-	var flame := Node3D.new()
-	flame.position = Vector3(0, 2.02, 0)
-	root.add_child(flame)
-	# язык пламени: конус + раскалённая сердцевина (шар читался как «яйцо»).
-	# Тени от пламени выключены: иначе меш вокруг лампы гасит весь свет факела.
-	var outer := MeshInstance3D.new()
-	var fmesh := CylinderMesh.new()
-	fmesh.top_radius = 0.012
-	fmesh.bottom_radius = 0.11
-	fmesh.height = 0.36
-	fmesh.radial_segments = 7
-	outer.mesh = fmesh
-	outer.position = Vector3(0, 0.12, 0)
-	outer.material_override = mat_flame
-	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(outer)
-	var core := MeshInstance3D.new()
-	var cmesh := CylinderMesh.new()
-	cmesh.top_radius = 0.006
-	cmesh.bottom_radius = 0.055
-	cmesh.height = 0.2
-	cmesh.radial_segments = 6
-	core.mesh = cmesh
-	core.position = Vector3(0, 0.03, 0)
-	core.material_override = mat_flame_core
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(core)
-	# мягкий ореол вокруг пламени: убирает «трафаретный» вид конуса
-	var halo := MeshInstance3D.new()
-	var hq := QuadMesh.new()
-	hq.size = Vector2(0.7, 0.7)
-	halo.mesh = hq
-	var hm := StandardMaterial3D.new()
-	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.albedo_color = Color(1.0, 0.52, 0.18, 0.55)
-	hm.albedo_texture = _radial_glow_texture()
-	halo.material_override = hm
-	halo.position = Vector3(0, 0.15, 0)
-	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(halo)
-	flames.append(flame)
-
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.76, 0.54)
-	light.light_energy = 3.2
-	light.omni_range = 10.5
-	light.omni_attenuation = 1.0
-	light.shadow_enabled = true
-	# лампа выше языка пламени: так свет не оказывается внутри меша
-	light.position = Vector3(0, 2.42, 0)
-	root.add_child(light)
-	lights.append({"light": light, "base": 3.2, "seed": randf() * 10.0, "flame": flame})
+	_cyl(0.17, 0.24, Vector3(0, 1.9, 0), mat_metal, root)
+	# пламя сцены на (0, 1.1, 0.3): садим его на верх чаши (y = 2.02)
+	var torch := _spawn_torch(root, Transform3D(Basis.IDENTITY, Vector3(0, 0.92, -0.3)), 10.5)
+	(torch.get_node("Mesh") as Node3D).visible = false
 
 
 ## Освещённость точки (0…100) с учётом затухания и стен между светом и точкой.
@@ -1853,7 +1805,7 @@ func light_at(pos: Vector3) -> float:
 		if l == null or not is_instance_valid(l):
 			continue
 		var lp := _light_world_position(l)
-		var r := l.omni_range
+		var r: float = entry.get("reach", l.omni_range)
 		var dist := lp.distance_to(sample)
 		if dist > r:
 			continue
@@ -1926,7 +1878,7 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(1.8, 0.1, 0.9), pos + Vector3(0, 0.9, 0), mat_wood)
 			for dx in [-0.75, 0.75]:
 				for dz in [-0.35, 0.35]:
-					_box(Vector3(0.1, 0.9, 0.1), pos + Vector3(dx, 0.45, dz), mat_wood)
+					_box(Vector3(0.1, 0.9, 0.1), pos + Vector3(dx, 0.45, dz), mat_beam)
 		"anvil":
 			_box(Vector3(1.0, 0.4, 0.5), pos + Vector3(0, 0.6, 0), mat_metal)
 			_box(Vector3(0.5, 0.4, 0.4), pos + Vector3(0, 0.2, 0), mat_metal)
@@ -1955,7 +1907,7 @@ func _prop(type: String, pos: Vector3) -> void:
 			_chain_prop(pos)
 		"refuse":
 			for i in 6:
-				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_dark)
+				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_cap)
 		"stairs":
 			# Простые кубы с текстурой кирпича: ступень — сплошной блок от пола,
 			# без отдельных проступей из тёсаного камня.
@@ -1978,20 +1930,20 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(0.98, 0.16, 0.98), pos + Vector3(0, ph - 0.4, 0), mat_brick)
 			_box(Vector3(1.14, 0.24, 1.14), pos + Vector3(0, ph - 0.16, 0), mat_brick)
 		"shelf":
-			_box(Vector3(1.4, 1.9, 0.45), pos + Vector3(0, 0.95, 0), mat_wood)
+			_box(Vector3(1.4, 1.9, 0.45), pos + Vector3(0, 0.95, 0), mat_beam)
 			for i in 3:
-				_box(Vector3(1.25, 0.05, 0.4), pos + Vector3(0, 0.5 + i * 0.55, 0.03), mat_metal)
+				_box(Vector3(1.25, 0.05, 0.4), pos + Vector3(0, 0.5 + i * 0.55, 0.03), mat_wood)
 				_box(Vector3(0.3, 0.25, 0.25), pos + Vector3(-0.35 + i * 0.35, 0.65 + i * 0.55, 0.05), mat_wood)
 		"bed":
-			_box(Vector3(1.9, 0.32, 0.85), pos + Vector3(0, 0.16, 0), mat_wood)
+			_box(Vector3(1.9, 0.32, 0.85), pos + Vector3(0, 0.16, 0), mat_beam)
 			var straw := _box(Vector3(1.75, 0.12, 0.7), pos + Vector3(0, 0.36, 0), mat_wood)
-			straw.material_override = mat_metal
+			straw.material_override = mat_beam
 			_box(Vector3(0.5, 0.16, 0.7), pos + Vector3(-0.6, 0.46, 0), mat_wood)
 		"rubble":
 			for i in 7:
 				_sphere(0.12 + randf() * 0.14, pos + Vector3(randf_range(-0.7, 0.7), 0.1, randf_range(-0.7, 0.7)), mat_wall)
 		"rack":
-			_box(Vector3(1.2, 0.12, 0.4), pos + Vector3(0, 0.06, 0), mat_wood)
+			_box(Vector3(1.2, 0.12, 0.4), pos + Vector3(0, 0.06, 0), mat_beam)
 			for i in 3:
 				_cyl(0.03, 1.7, pos + Vector3(-0.35 + i * 0.35, 0.85, 0), mat_metal)
 			_box(Vector3(1.2, 0.1, 0.35), pos + Vector3(0, 1.55, 0), mat_metal)
@@ -2010,68 +1962,38 @@ func _prop(type: String, pos: Vector3) -> void:
 		"shelf":
 			for i in 3:
 				_box(Vector3(1.6, 0.06, 0.4), pos + Vector3(0, 0.6 + i * 0.6, 0), mat_wood)
-			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(-0.75, 0.9, 0), mat_wood)
-			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(0.75, 0.9, 0), mat_wood)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(-0.75, 0.9, 0), mat_beam)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(0.75, 0.9, 0), mat_beam)
 		"bed":
-			_box(Vector3(1.9, 0.35, 1.0), pos + Vector3(0, 0.2, 0), mat_wood)
+			_box(Vector3(1.9, 0.35, 1.0), pos + Vector3(0, 0.2, 0), mat_beam)
 			_box(Vector3(1.9, 0.1, 1.0), pos + Vector3(0, 0.42, 0), mat_wood)
 			_box(Vector3(0.6, 0.25, 1.0), pos + Vector3(-0.65, 0.55, 0), mat_wood)
 		"rubble":
 			for i in 8:
-				_sphere(0.18 + randf() * 0.12, pos + Vector3(randf_range(-0.6, 0.6), 0.12, randf_range(-0.6, 0.6)), mat_dark)
+				_sphere(0.18 + randf() * 0.12, pos + Vector3(randf_range(-0.6, 0.6), 0.12, randf_range(-0.6, 0.6)), mat_cap)
 		"brazier_stand":
 			_cyl(0.12, 1.6, pos + Vector3(0, 0.8, 0), mat_metal)
 			var bowl := _cyl(0.35, 0.2, pos + Vector3(0, 1.65, 0), mat_metal)
 			var coals := _sphere(0.25, pos + Vector3(0, 1.75, 0), mat_glow)
 			coals.scale = Vector3(1, 0.4, 1)
 			var light := OmniLight3D.new()
-			light.light_color = Color(1.0, 0.69, 0.43)
-			light.light_energy = 2.8
-			light.omni_range = 8.5
-			light.shadow_enabled = true
+			_style_fire_light(light)
+			light.light_energy = 2.6
+			light.omni_range = 7.5
 			light.position = pos + Vector3(0, 1.9, 0)
 			add_child(light)
-			lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": coals})
+			lights.append({"light": light, "base": 2.6, "seed": randf() * 10.0,
+				"flame": coals, "reach": 8.5})
 		"weapon_rack":
 			_box(Vector3(1.6, 0.1, 0.3), pos + Vector3(0, 1.2, 0), mat_wood)
-			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_wood)
-			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_wood)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_beam)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_beam)
 			for i in 3:
 				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
-		"puddle", "cistern_pool":
-			var puddle := Node3D.new()
-			puddle.position = pos + Vector3(0, 0.025, 0)
-			add_child(puddle)
-			var q := MeshInstance3D.new()
-			var pm := PlaneMesh.new()
-			pm.size = Vector2(5.2, 3.8) if type == "cistern_pool" \
-				else Vector2(2.2, 1.7)
-			q.mesh = pm
-			q.material_override = mat_puddle_water
-			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			puddle.add_child(q)
-
-			var ripple_mesh := TorusMesh.new()
-			ripple_mesh.inner_radius = 0.19
-			ripple_mesh.outer_radius = 0.22
-			ripple_mesh.rings = 32
-			ripple_mesh.ring_segments = 6
-			var ripple := MeshInstance3D.new()
-			ripple.mesh = ripple_mesh
-			ripple.position.y = 0.012
-			ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var ripple_mat := StandardMaterial3D.new()
-			ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
-			ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			ripple_mat.metallic = 0.15
-			ripple_mat.roughness = 0.2
-			ripple.material_override = ripple_mat
-			puddle.add_child(ripple)
-			water_ripples.append({
-				"mesh": ripple,
-				"material": ripple_mat,
-				"seed": randf(),
-			})
+		"puddle":
+			_add_puddle_cluster(pos, 2)
+		"cistern_pool":
+			_add_puddle_cluster(pos, 3)
 		_:
 			pass
 
@@ -2106,6 +2028,9 @@ func _process(delta: float) -> void:
 		ripple_color.a = (1.0 - phase) * 0.32
 		ripple_mat.albedo_color = ripple_color
 	for l in lights:
+		# факелы из torch.tscn мерцают сами (torch_flicker.gd)
+		if l.get("self_flicker", false):
+			continue
 		var s: float = l["seed"]
 		var base: float = l["base"]
 		l["light"].light_energy = base * (0.86 + 0.1 * sin(t * 7.1 + s) + 0.06 * sin(t * 17.3 + s * 2.0))
@@ -2129,11 +2054,13 @@ func _process(delta: float) -> void:
 			ranked.append({"l": li, "d": _light_world_position(li).distance_to(center)})
 		ranked.sort_custom(func(a, b): return a["d"] < b["d"])
 		for i in ranked.size():
-			ranked[i]["l"].shadow_enabled = i < 4 and ranked[i]["d"] < 15.0
+			ranked[i]["l"].shadow_enabled = i < shadow_budget and ranked[i]["d"] < 15.0
 
 
-## Настенный факел: кронштейн и чаша примитивами, пламя и свет в зал.
-func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
+## Настенный факел: общая сцена torch.tscn на кронштейне у грани стены.
+## Тени включает лимитер в _process (shadow_budget ближайших к герою).
+func _wall_torch(open_cell: Vector2i, d: Vector2i, _shadows := false,
+		reach := TORCH_REACH) -> bool:
 	var wall_cell := open_cell + d
 	var face_dir := Vector2i(-d.x, -d.y)
 	var xf := _face_xform([wall_cell], face_dir)
@@ -2141,47 +2068,39 @@ func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
 		"pos": xf.origin + Vector3(0.0, 1.72, 0.0),
 		"normal": -xf.basis.z,
 	}
-	var root := _wall_root(anchor)
-	_box(Vector3(0.28, 0.46, 0.08), Vector3(0.0, 0.22, 0.04), mat_metal, root)
-	_box(Vector3(0.08, 0.08, 0.28), Vector3(0.0, 0.38, 0.18), mat_metal, root)
-	_cyl(0.055, 0.54, Vector3(0.0, 0.72, 0.3), mat_wood, root)
-	_cyl(0.17, 0.12, Vector3(0.0, 1.04, 0.3), mat_metal, root)
-	var flame := Node3D.new()
-	flame.position = Vector3(0.0, 1.12, 0.3)
-	root.add_child(flame)
-	var outer := MeshInstance3D.new()
-	var fmesh := CylinderMesh.new()
-	fmesh.top_radius = 0.012
-	fmesh.bottom_radius = 0.1
-	fmesh.height = 0.36
-	fmesh.radial_segments = 7
-	outer.mesh = fmesh
-	outer.position = Vector3(0.0, 0.12, 0.0)
-	outer.material_override = mat_flame
-	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(outer)
-	var core := MeshInstance3D.new()
-	var cmesh := CylinderMesh.new()
-	cmesh.top_radius = 0.006
-	cmesh.bottom_radius = 0.05
-	cmesh.height = 0.2
-	cmesh.radial_segments = 6
-	core.mesh = cmesh
-	core.position = Vector3(0.0, 0.04, 0.0)
-	core.material_override = mat_flame_core
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	flame.add_child(core)
-	flames.append(flame)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.76, 0.54)
-	light.light_energy = 3.1
-	light.omni_range = 10.0
-	light.omni_attenuation = 1.0
-	light.shadow_enabled = shadows
-	light.position = Vector3(0.0, 1.42, 0.3)
-	root.add_child(light)
-	lights.append({"light": light, "base": 3.1, "seed": randf() * 10.0})
+	_spawn_torch(_wall_root(anchor), Transform3D.IDENTITY, reach)
 	return true
+
+
+## Экземпляр torch.tscn. Лампа мерцает сама (torch_flicker.gd), поэтому в
+## lights она помечена self_flicker; reach — дальность света для стражи.
+func _spawn_torch(parent: Node3D, xform: Transform3D, reach: float,
+		energy := 2.5) -> Node3D:
+	var torch: Node3D = TORCH_SCENE.instantiate()
+	torch.transform = xform
+	parent.add_child(torch)
+	var light: OmniLight3D = torch.get_node("Light")
+	light.set("base_energy", energy)
+	light.shadow_enabled = false
+	lights.append({"light": light, "base": energy, "seed": 0.0, "reach": reach,
+		"self_flicker": true})
+	return torch
+
+
+## Огонь жаровни — те же параметры лампы, что у факела в torch.tscn.
+func _style_fire_light(light: OmniLight3D) -> void:
+	light.light_color = Color(1.0, 0.6, 0.32)
+	light.omni_attenuation = 1.5
+	light.shadow_enabled = false
+	light.light_size = 0.08
+	light.shadow_bias = 0.03
+	light.shadow_normal_bias = 1.0
+	light.light_volumetric_fog_energy = 2.0
+	light.light_specular = 0.6
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = 25.0
+	light.distance_fade_shadow = 15.0
+	light.distance_fade_length = 8.0
 
 
 ## Настенный факел у ближайшей грани стены. Если стены рядом нет — false,
@@ -2264,6 +2183,122 @@ func _dress_rooms() -> void:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
 
 
+# ---------------------------------------------------------------------------
+# этап 5: лужи (проецирующие декали, а не плоскости над полом)
+
+## Лужа-декаль: пятно проецируется на коббл, поэтому повторяет его рельеф
+## и лежит В полу, а не висит над ним, как старые плоскости.
+func _add_puddle(pos: Vector3, big := false) -> void:
+	if LEGACY_PUDDLE_PLANES:
+		_legacy_puddle_plane(pos, big)
+		return
+	if _puddle_packed == null:
+		if not ResourceLoader.exists(PUDDLE_SCENE):
+			push_warning("нет сцены лужи " + PUDDLE_SCENE)
+			return
+		_puddle_packed = load(PUDDLE_SCENE)
+	var puddle: Node3D = _puddle_packed.instantiate()
+	puddle.set("base_scale", 1.7 if big else 1.0)
+	puddle.position = Vector3(pos.x, PUDDLE_LIFT, pos.z)
+	add_child(puddle)
+	puddles.append(puddle)
+
+
+## Одиночное круглое пятно читается наклейкой, поэтому лужи ставятся
+## кластером: центральное пятно и 1–3 спутника со сдвигом другого размера.
+func _add_puddle_cluster(pos: Vector3, companions: int) -> void:
+	_add_puddle(pos, companions > 1)
+	var c := _nearest_open_cell(pos)
+	var h := _cell_hash(c.x, c.y, 71)
+	for i in companions:
+		var ang := TAU * float((h >> (i * 4)) % 16) / 16.0
+		var r := 0.55 + float((h >> (i * 3)) % 4) * 0.22
+		var p := _floor_safe(pos + Vector3(cos(ang) * r, 0.0, sin(ang) * r), 0.30)
+		if _puddle_near(p, 0.45):
+			continue
+		_add_puddle(p, false)
+
+
+## Лужа у стены под факелом. Вода течёт к стене, и там же её подсвечивает
+## огонь — только так глянец читается водой, а не тёмным пятном.
+## Ставится после _scatter_torches(): нужны сами источники света.
+func _add_torch_puddles() -> void:
+	var placed := 0
+	for entry in lights:
+		if placed >= 2:
+			break
+		var li: OmniLight3D = entry.get("light")
+		if li == null or not is_instance_valid(li):
+			continue
+		var p := _light_world_position(li)
+		var wall := _nearest_wall(p)
+		if wall.is_empty():
+			continue
+		var n: Vector3 = wall["normal"]
+		var spot := Vector3(p.x, 0.0, p.z) + n * 1.15
+		if _puddle_near(spot, 1.4):
+			continue
+		_add_puddle(_floor_safe(spot, 0.30), false)
+		placed += 1
+	print("PUDDLES torch_lit=", placed)
+
+
+## Есть ли лужа ближе radius: два пятна в одной точке читаются грязью.
+func _puddle_near(pos: Vector3, radius: float) -> bool:
+	for p in puddles:
+		if Vector2(p.position.x - pos.x, p.position.z - pos.z).length() < radius:
+			return true
+	return false
+
+
+## Пол под трещиной свода мокрый: вода собирается там, где капает.
+## Возвращает точку пола под капелью — существующую лужу, если она рядом.
+func _puddle_under_crack(pos: Vector3) -> Vector3:
+	for p in puddles:
+		if Vector2(p.position.x - pos.x, p.position.z - pos.z).length() < 1.8:
+			return Vector3(p.position.x, 0.0, p.position.z)
+	_add_puddle(pos, false)
+	return Vector3(pos.x, 0.0, pos.z)
+
+
+## Лужа до этапа 5: плоскость на 0.025 м НАД полом плюс бегущий тор-круг.
+## Включена только под LEGACY_PUDDLE_PLANES (A/B-сравнение); узлы уходят в
+## скрытый _deprecated и не удаляются — удалять только с согласия владельца.
+func _legacy_puddle_plane(pos: Vector3, big: bool) -> void:
+	var puddle := Node3D.new()
+	puddle.position = pos + Vector3(0, 0.025, 0)
+	_deprecated_root().add_child(puddle)
+	var q := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(5.2, 3.8) if big else Vector2(2.2, 1.7)
+	q.mesh = pm
+	q.material_override = mat_puddle_water
+	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puddle.add_child(q)
+
+	var ripple_mesh := TorusMesh.new()
+	ripple_mesh.inner_radius = 0.19
+	ripple_mesh.outer_radius = 0.22
+	ripple_mesh.rings = 32
+	ripple_mesh.ring_segments = 6
+	var ripple := MeshInstance3D.new()
+	ripple.mesh = ripple_mesh
+	ripple.position.y = 0.012
+	ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ripple_mat := StandardMaterial3D.new()
+	ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
+	ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ripple_mat.metallic = 0.15
+	ripple_mat.roughness = 0.2
+	ripple.material_override = ripple_mat
+	puddle.add_child(ripple)
+	water_ripples.append({
+		"mesh": ripple,
+		"material": ripple_mat,
+		"seed": randf(),
+	})
+
+
 ## KillZone: страховка от выхода за нижнюю границу уровня.
 func _add_kill_zone() -> void:
 	var kill := Area3D.new()
@@ -2282,3 +2317,57 @@ func _add_kill_zone() -> void:
 			if body.has_method("respawn_to_safe"):
 				body.respawn_to_safe()
 	)
+
+
+## Атмосферные факелы вдоль стен с шагом ~spacing м (этап 6): пятна света с
+## тёмными промежутками вместо ровной заливки. Обход детерминированный, так
+## что расстановка одинакова при каждом запуске. reach = 0: эти факелы не
+## входят в light_at, баланс скрытности остаётся как до этапа 6.
+func _place_torches(spacing := 8.0, max_count := 70) -> void:
+	var placed := 0
+	for y in map_h:
+		for x in map_w:
+			if placed >= max_count:
+				continue
+			var c := Vector2i(x, y)
+			if not _is_open_cell(c):
+				continue
+			for d in SIDES:
+				if not _wall_at(c, d):
+					continue
+				var pos := cell_center(x, y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+				if _light_near(pos, spacing):
+					break
+				_wall_torch(c, d, false, 0.0)
+				placed += 1
+				break
+	print("TORCHES atmospheric=", placed)
+
+
+## Подвесные чаши с огнём в глубине больших залов, куда не достают настенные
+## факелы (dist >= 3 клеток от стены). Висят на цепи под сводом: проход не
+## перекрывают, коллизия не нужна. reach = 0, как у атмосферных факелов.
+func _place_hanging_fires(spacing := 10.0, max_count := 12) -> void:
+	var placed := 0
+	for y in map_h:
+		for x in map_w:
+			var c := Vector2i(x, y)
+			if placed >= max_count or not _is_open_cell(c) or int(dist[y][x]) < 2:
+				continue
+			var pos := cell_center(x, y)
+			if _light_near(pos + Vector3(0, 1.6, 0), spacing):
+				continue
+			var top: float = cell_ceil(x, y)
+			var cup_y: float = minf(3.1, top - 1.2)
+			var root := Node3D.new()
+			root.position = pos
+			add_child(root)
+			_box(Vector3(0.04, top - cup_y, 0.04),
+				Vector3(0, (top + cup_y) * 0.5, 0), mat_metal, root)
+			_cyl(0.22, 0.14, Vector3(0, cup_y, 0), mat_metal, root)
+			# пламя сцены на (0, 1.1, 0.3): садим его на край чаши
+			var fire := _spawn_torch(root,
+				Transform3D(Basis.IDENTITY, Vector3(0, cup_y - 1.02, -0.3)), 0.0, 2.8)
+			(fire.get_node("Mesh") as Node3D).visible = false
+			placed += 1
+	print("TORCHES hanging=", placed)

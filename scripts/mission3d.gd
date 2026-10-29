@@ -63,7 +63,10 @@ func _add_photo_spots() -> void:
 	spots.name = "PhotoSpots"
 	add_child(spots)
 	var defs := [
-		{"name": "spot_01_torch_puddle", "pos": Vector3(10.5, 1.6, 60.0), "look_at": Vector3(10.5, 1.2, 61.5)},
+		# Лужа стоит у стены стартового зала (15, 59). Камера смотрит на неё
+		# вдоль света от ближнего источника: только на такой дистанции видно,
+		# что пятно лежит В полу и что у него есть глянец.
+		{"name": "spot_01_torch_puddle", "pos": Vector3(11.0, 1.45, 55.0), "look_at": Vector3(15.0, 0.05, 59.0)},
 		{"name": "spot_02_corridor_junction", "pos": Vector3(40.0, 1.6, 49.0), "look_at": Vector3(50.0, 1.2, 49.0)},
 		{"name": "spot_03_wall_curve_ceiling", "pos": Vector3(90.0, 1.6, 35.0), "look_at": Vector3(95.0, 1.2, 35.0)},
 		{"name": "spot_04_dark_tunnel_arch", "pos": Vector3(15.0, 1.6, 40.0), "look_at": Vector3(20.0, 1.2, 40.0)},

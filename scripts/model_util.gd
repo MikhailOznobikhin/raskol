@@ -77,6 +77,22 @@ static func aabb_local_unskinned(root: Node3D) -> AABB:
 	return out
 
 
+## Визуальный слой персонажей. Лужи — проецирующие декали, и они не должны
+## красить сапоги гнома: меши героя и врагов живут на слое 2, а у декалей
+## (лужи, копоть, мох) cull_mask = 1 — только слой 1. Камера и источники
+## света по умолчанию видят все слои, поэтому на вид персонажей это не влияет.
+const CHARACTER_LAYER := 2
+
+
+## Все меши поддерева — на один визуальный слой (VisualInstance3D.layers).
+static func set_visual_layer(root: Node, layer: int) -> void:
+	if layer < 1 or layer > 20:
+		return
+	var mask := 1 << (layer - 1)
+	for mi in meshes(root):
+		mi.layers = mask
+
+
 ## Скрывает примитивы рига, когда сверху надет glTF-меш.
 static func hide_meshes(root: Node) -> void:
 	for mi in meshes(root):

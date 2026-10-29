@@ -1,0 +1,27 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://assets/shaders/stone_triplanar.gdshader" id="1_nhlg4"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_basecolor.jpg" id="2_pa6a7"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_normal.jpg" id="3_a1ro0"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_mr.png" id="4_b182b"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_nhlg4")
+shader_parameter/albedo_tex = ExtResource("2_pa6a7")
+shader_parameter/normal_tex = ExtResource("3_a1ro0")
+shader_parameter/rough_tex = ExtResource("4_b182b")
+shader_parameter/tint = Color(0.62, 0.58, 0.55, 1)
+shader_parameter/uv_scale = 0.25
+shader_parameter/normal_scale = 0.6
+shader_parameter/roughness_mult = 1.1
+shader_parameter/metallic_value = 0.0
+shader_parameter/specular_value = 0.18
+shader_parameter/roughness_floor = 0.7
+shader_parameter/macro_strength = 0.22
+shader_parameter/rough_from_green = true
+shader_parameter/grime_color = null
+shader_parameter/floor_y = 0.0
+shader_parameter/grime_height = 1.1
+shader_parameter/grime_strength = 0.55
+shader_parameter/damp_strength = 0.35

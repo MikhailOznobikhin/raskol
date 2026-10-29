@@ -44,6 +44,7 @@ Mission 1 level (M1) is built procedurally by `res://scripts/dungeon.gd` (`class
 - Also adds DirectionalLight3D (fill) in `_build_environment()`: light_color = Color(0.58,0.66,0.86), energy 0.5, shadow_enabled false, rotation (-55,32,0)
 - Level2: `level2_builder._build_environment()` similar setup (tonemap AGX)
 - Showcase modes in `main3d.gd` create temporary environments
+- **Since Stage 6** the values above are history: M1 and Level 2 load the shared `res://environment/dungeon_env.tres` via `Dungeon.make_world_environment()`; the fill DirectionalLight3D and the camera lamp are gone; torches are `res://scenes/props/torch.tscn` (see visual_log Stage 6).
 
 ## g) Light nodes
 - Dungeon places torches via `_scatter_torches()` and `_torch()` calls (mission3d calls `dungeon._torch()` twice at start). Torches create lights (OmniLight3D) with flame VFX.

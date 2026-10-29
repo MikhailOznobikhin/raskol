@@ -105,6 +105,21 @@ func _ready() -> void:
 	col.position = Vector3(0, 0.78, 0)
 	add_child(col)
 	_build_rig()
+	_add_readability_light()
+
+
+## Едва заметная тёплая лампа над-перед гномом: в тёмном коридоре он не
+## превращается в чёрный силуэт. Висит на риге (вперёд — -Z), без теней.
+func _add_readability_light() -> void:
+	var lamp := OmniLight3D.new()
+	lamp.name = "ReadabilityLight"
+	lamp.light_color = Color(1.0, 0.75, 0.5)
+	lamp.light_energy = 0.25
+	lamp.omni_range = 3.0
+	lamp.shadow_enabled = false
+	lamp.light_specular = 0.1
+	lamp.position = Vector3(0.0, 1.9, -0.6)
+	rig.add_child(lamp)
 
 
 func _mat(col: Color, rough := 0.8, metal := 0.0) -> StandardMaterial3D:
@@ -270,6 +285,9 @@ func _build_rig() -> void:
 
 	_add_blob_shadow(0.55)
 	_attach_model()
+	# Лужи-декали проецируются только на слой 1: герой живёт на слое 2,
+	# иначе вода красит сапоги и плащ.
+	ModelUtil.set_visual_layer(self, ModelUtil.CHARACTER_LAYER)
 
 
 ## Надевает glTF-модель гнома на риг и вешает молот в правую кисть.
@@ -1070,8 +1088,8 @@ func _build_anim_tree() -> void:
 		slash_node.timeline_length = slash_len
 		blend_tree.add_node("SlashClip", slash_node)
 		var slash_shot := AnimationNodeOneShot.new()
-		slash_shot.fadein_time = 0.15
-		slash_shot.fadeout_time = 0.15
+		slash_shot.fadein_time = 0.12
+		slash_shot.fadeout_time = 0.18
 		blend_tree.add_node("SlashShot", slash_shot)
 		blend_tree.connect_node("SlashShot", 0, base)
 		blend_tree.connect_node("SlashShot", 1, "SlashClip")
@@ -1084,12 +1102,14 @@ func _build_anim_tree() -> void:
 		roll_node.stretch_time_scale = true
 		var roll_anim: Animation = anim.get_animation(roll)
 		if roll_anim != null:
-			roll_node.timeline_length = roll_anim.length / 1.2
+			# рывок длится DODGE_TIME (0.22 с): растянутый на 1.2 с Roll
+			# держал бы цикл шага на паузе и герой «ехал» в позе кувырка
+			roll_node.timeline_length = minf(roll_anim.length, 0.5)
 			roll_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("RollClip", roll_node)
 		var roll_shot := AnimationNodeOneShot.new()
-		roll_shot.fadein_time = 0.15
-		roll_shot.fadeout_time = 0.15
+		roll_shot.fadein_time = 0.10
+		roll_shot.fadeout_time = 0.22
 		blend_tree.add_node("RollShot", roll_shot)
 		blend_tree.connect_node("RollShot", 0, base)
 		blend_tree.connect_node("RollShot", 1, "RollClip")
@@ -1106,8 +1126,9 @@ func _build_anim_tree() -> void:
 			hit_anim.loop_mode = Animation.LOOP_NONE
 		blend_tree.add_node("HitClip", hit_node)
 		var hit_shot := AnimationNodeOneShot.new()
-		hit_shot.fadein_time = 0.04
-		hit_shot.fadeout_time = 0.10
+		# мягкий вход/выход: удар не «щёлкает» поверх шага
+		hit_shot.fadein_time = 0.10
+		hit_shot.fadeout_time = 0.18
 		blend_tree.add_node("HitShot", hit_shot)
 		blend_tree.connect_node("HitShot", 0, base)
 		blend_tree.connect_node("HitShot", 1, "HitClip")
@@ -1168,7 +1189,10 @@ func _animate_model(dt: float) -> void:
 			ModelUtil.play_key(anim, ["Death"], false)
 		return
 	anim_was_dead = false
+	var prev_action := active_anim_action
 	if state == "attack" or state == "heavy":
+		if prev_action != "attack":
+			_stop_action_shot(prev_action)
 		var step := combo_step if state == "attack" else -1
 		var sc := (2.0 + 0.08 * combo_step) if state == "attack" else 1.2
 		if slash_node != null:
@@ -1185,6 +1209,8 @@ func _animate_model(dt: float) -> void:
 		return
 	slash_step = -99
 	if state == "dodge":
+		if prev_action != "dodge":
+			_stop_action_shot(prev_action)
 		if anim_tree != null and anim_has_roll:
 			if active_anim_action != "dodge":
 				anim_tree.set("parameters/RollShot/request",
@@ -1194,6 +1220,8 @@ func _animate_model(dt: float) -> void:
 		active_anim_action = "dodge"
 		return
 	if state == "hurt":
+		if prev_action != "hurt":
+			_stop_action_shot(prev_action)
 		if anim_tree != null and anim_has_hit:
 			if active_anim_action != "hurt":
 				anim_tree.set("parameters/HitShot/request",
@@ -1202,6 +1230,10 @@ func _animate_model(dt: float) -> void:
 			ModelUtil.play_key(anim, ["HitRecieve", "HitReact"], false, 1.1, 0.05)
 		active_anim_action = "hurt"
 		return
+	# OneShot глушит базовый цикл шага, пока играет целиком, а клип удара
+	# (1.6 с) заметно длиннее стана: по выходу из действия гасим его сами,
+	# иначе герой скользит в позе урона и «шаги пропадают»
+	_stop_action_shot(prev_action)
 	active_anim_action = ""
 	if anim_tree == null:
 		if speed > 0.45:
@@ -1219,6 +1251,26 @@ func _animate_model(dt: float) -> void:
 		# крен в поворот: тело заваливается в сторону, а не «щёлкает» на 180°
 		var roll: float = clampf(-turn_rate * 0.03, -0.22, 0.22)
 		model_root.rotation.z = lerp(model_root.rotation.z, roll, dt * 9.0)
+
+
+## Гасит OneShot завершённого действия: его базовый вход — весь цикл шага,
+## и пока клип играет, он стоит на паузе.
+func _stop_action_shot(action: String) -> void:
+	if anim_tree == null:
+		return
+	match action:
+		"attack":
+			if anim_has_slash:
+				anim_tree.set("parameters/SlashShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+		"dodge":
+			if anim_has_roll:
+				anim_tree.set("parameters/RollShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
+		"hurt":
+			if anim_has_hit:
+				anim_tree.set("parameters/HitShot/request",
+					AnimationNodeOneShot.ONE_SHOT_REQUEST_ABORT)
 
 
 func _impact(pos: Vector3, heavy: bool) -> void:

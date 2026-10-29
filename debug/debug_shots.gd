@@ -37,6 +37,21 @@ func _save_shot(dir_path: String, file_name: String) -> void:
 	var err := img.save_png(path)
 	print("[DebugShots] saved ", path, " err=", err)
 
+## Средний FPS и худший кадр за 120 кадров на текущей точке.
+func _measure_fps(spot_name: String) -> void:
+	var frames := 120
+	var worst := 0
+	var start := Time.get_ticks_usec()
+	var prev := start
+	for i in frames:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		worst = maxi(worst, now - prev)
+		prev = now
+	var avg_fps := frames * 1000000.0 / float(prev - start)
+	print("[DebugShots] fps %s avg=%.1f worst_frame_ms=%.1f" % [spot_name, avg_fps, worst / 1000.0])
+
+
 func _run_tour() -> void:
 	_touring = true
 	var stage := OS.get_environment("SHOT_STAGE")
@@ -56,6 +71,11 @@ func _run_tour() -> void:
 		cam.fov = original_cam.fov
 		cam.near = original_cam.near
 		cam.far = original_cam.far
+	# SHOT_FPS=1 — после каждого кадра замер FPS на этой точке, без vsync
+	var measure_fps := OS.get_environment("SHOT_FPS") == "1"
+	if measure_fps:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		print("[DebugShots] viewport=", get_viewport().get_visible_rect().size)
 	for spot in get_tree().get_nodes_in_group("photo_spot"):
 		if spot is Node3D:
 			cam.global_transform = (spot as Node3D).global_transform
@@ -63,6 +83,8 @@ func _run_tour() -> void:
 			for i in SETTLE_FRAMES:
 				await get_tree().process_frame
 			_save_shot("res://_screenshots/" + stage, spot.name)
+			if measure_fps:
+				await _measure_fps(spot.name)
 	cam.queue_free()
 	if original_cam:
 		original_cam.make_current()

@@ -1,6 +1,11 @@
 extends Node3D
 ## Точка входа 3D-версии: меню, кинематик, миссия, финал.
 
+## Потолок источников света в M1 для автотеста. Было 30; этап 6 добавил ~45
+## атмосферных факелов (шаг 8 м). Без теней omni-лампы в Forward+ дёшевы
+## (кластерный рендер), тени держит Dungeon.shadow_budget = 6.
+const LIGHT_BUDGET := 90
+
 var current: Node = null
 
 
@@ -666,7 +671,7 @@ func _test_mode() -> void:
 			or not lower_mine_to_route or not lower_mine_second_to_route \
 			or not cistern_note or not cistern_item \
 			or not lower_mine_note or not lower_mine_item \
-			or dungeon_light_count > 30:
+			or dungeon_light_count > LIGHT_BUDGET:
 		print("TEST FAIL: expansion size=", m.dungeon.map_w, "x", m.dungeon.map_h,
 			" cistern=", cistern_connected, "/", cistern_to_route,
 			"/", cistern_second_to_route,
@@ -704,6 +709,15 @@ func _test_mode() -> void:
 		get_tree().quit()
 		return
 	print("TEST sfx3d pool=", Sfx._pool3d.size())
+	# звук в debug-сборке глушится в Settings._ready, иначе прогон теста и
+	# запуск из редактора бьют по ушам; проверяем, что шина действительно тихая
+	var master := AudioServer.get_bus_index("Master")
+	if not AudioServer.is_bus_mute(master) or Settings.volume > 0.001:
+		print("TEST FAIL: звук не выключен на старте (volume=", Settings.volume_label(),
+			", mute=", AudioServer.is_bus_mute(master), ")")
+		get_tree().quit()
+		return
+	print("TEST audio muted=true volume=", Settings.volume_label())
 	m._absorb(m.fleshes[0])
 	await get_tree().create_timer(0.3).timeout
 	print("TEST absorb magic=", GameState.magic, " craving=", GameState.craving)

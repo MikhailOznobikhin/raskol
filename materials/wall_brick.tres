@@ -1,0 +1,29 @@
+[gd_resource type="ShaderMaterial" load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://shaders/stone_world.gdshader" id="1_8o5m0"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_basecolor.jpg" id="2_01wq7"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_mr.png" id="3_nv3cm"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/brickwalls_normal.jpg" id="4_mh412"]
+[ext_resource type="Texture2D" path="res://environment/variation_noise.tres" id="5_pv8r7"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_8o5m0")
+shader_parameter/albedo_tex = ExtResource("2_01wq7")
+shader_parameter/normal_tex = ExtResource("4_mh412")
+shader_parameter/mr_tex = ExtResource("3_nv3cm")
+shader_parameter/albedo_tint = Color(0.94, 0.91, 0.87, 1)
+shader_parameter/uv_scale = Vector2(3.66, 3.66)
+shader_parameter/normal_strength = 0.7
+shader_parameter/roughness_mult = 1.05
+shader_parameter/roughness_floor = 0.55
+shader_parameter/specular_value = 0.2
+shader_parameter/metallic_mult = 0.0
+shader_parameter/variation_noise = ExtResource("5_pv8r7")
+shader_parameter/variation_scale = 0.055
+shader_parameter/variation_strength = 0.22
+shader_parameter/grime_color = Color(0.12, 0.1, 0.08, 1)
+shader_parameter/floor_y = 0.0
+shader_parameter/grime_height = 1.1
+shader_parameter/grime_strength = 0.45
+shader_parameter/damp_strength = 0.35

@@ -134,15 +134,9 @@ func _ready() -> void:
 	camera.attributes = attrs
 	spring.add_child(camera)
 
-	# «походный свет» у камеры: подсвечивает то, на что смотрит игрок,
-	# и вытаскивает силуэт героя из темноты
-	var lamp := OmniLight3D.new()
-	lamp.light_color = Color(1.0, 0.95, 0.9)
-	lamp.light_energy = 1.7
-	lamp.omni_range = 12.0
-	lamp.omni_attenuation = 1.5
-	lamp.shadow_enabled = false
-	camera.add_child(lamp)
+	# «Походный свет» камеры (белый, 1.7, радиус 12 м) снят на этапе 6: он
+	# ровно заливал всё, на что смотрит игрок, и гасил пятна света факелов.
+	# Силуэт героя держит слабая лампа самого героя (Hero3D._add_readability_light).
 
 	_sync_exclusion()
 	call_deferred("_collect_fade_candidates")

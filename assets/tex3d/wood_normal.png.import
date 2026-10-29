@@ -3,25 +3,26 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dpvbuh56ku7ob"
-path="res://.godot/imported/wood_normal.png-83750a22bcdd9e23adef00a189f83c0c.ctex"
+path.bptc="res://.godot/imported/wood_normal.png-83750a22bcdd9e23adef00a189f83c0c.bptc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/tex3d/wood_normal.png"
-dest_files=["res://.godot/imported/wood_normal.png-83750a22bcdd9e23adef00a189f83c0c.ctex"]
+dest_files=["res://.godot/imported/wood_normal.png-83750a22bcdd9e23adef00a189f83c0c.bptc.ctex"]
 
 [params]
 
-compress/mode=0
-compress/high_quality=false
+compress/mode=2
+compress/high_quality=true
 compress/lossy_quality=0.7
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=2
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
