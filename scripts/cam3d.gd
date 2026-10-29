@@ -142,7 +142,9 @@ func _ready() -> void:
 
 	# Виньетка и зерно (этап 7): canvas-слой -1 — поверх 3D, под любым UI.
 	if Dungeon.air_fx_on("post"):
-		add_child((load(POST_FX_SCENE) as PackedScene).instantiate())
+		var post := (load(POST_FX_SCENE) as PackedScene).instantiate() as CanvasLayer
+		post.visible = Settings.post_fx
+		add_child(post)
 
 	_sync_exclusion()
 	call_deferred("_collect_fade_candidates")

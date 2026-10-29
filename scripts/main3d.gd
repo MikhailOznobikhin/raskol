@@ -739,6 +739,31 @@ func _test_mode() -> void:
 	await get_tree().process_frame
 	print("TEST resume paused=", get_tree().paused)
 
+	# меню графики: пресет «НИЗКОЕ» гасит эффекты на уже построенном уровне,
+	# «ВЫСОКОЕ» возвращает; настройки игрока после проверки восстанавливаются
+	var saved_quality := Settings.quality
+	var saved_gfx: Dictionary = Settings.gfx.duplicate()
+	Settings.quality = 2
+	Settings.cycle_quality(-2)
+	var env: Environment = m.dungeon.get_node("WorldEnvironment").environment
+	var mist_on: bool = m.dungeon.mist_volumes.any(func(v): return v.visible)
+	var low_ok: bool = Settings.quality == 0 and not env.volumetric_fog_enabled \
+		and not env.ssr_enabled and not get_tree().root.use_taa and not mist_on \
+		and Settings.shadow_limit() == 2
+	Settings.cycle_quality(2)
+	var high_ok: bool = Settings.quality == 2 and env.volumetric_fog_enabled \
+		and get_tree().root.use_taa and m.dungeon.mist_volumes.all(func(v): return v.visible)
+	Settings.cycle_gfx("ssr", 1)
+	var custom_ok: bool = Settings.quality == Settings.QUALITY_CUSTOM and not env.ssr_enabled
+	Settings.quality = saved_quality
+	Settings.gfx = saved_gfx
+	Settings._graphics_changed()
+	if not (low_ok and high_ok and custom_ok):
+		print("TEST FAIL: меню графики low=", low_ok, " high=", high_ok, " custom=", custom_ok)
+		get_tree().quit()
+		return
+	print("TEST graphics presets=ok custom=ok")
+
 	# --- скрытность: шум, конус зрения, свет ---
 	print("TEST stealth noise crouch=", Balance.NOISE_CROUCH, " walk=", Balance.NOISE_WALK,
 		" run=", Balance.NOISE_RUN, " throw=", Balance.NOISE_THROW)
