@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_5pu08"]
+[ext_resource type="PackedScene" path="res://assets/props3d/carved_wooden_plate/carved_wooden_plate_1k.gltf" id="2_sgkgo"]
+
+[node name="Plate" type="Node3D" groups=["prop"]]
+script = ExtResource("1_5pu08")
+size_class = 2
+footprint = Vector3(0.271831, 0.0381105, 0.26878)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_sgkgo")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.00156812, 0.0018553, 0.00769198)

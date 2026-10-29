@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_ych6d"]
+[ext_resource type="PackedScene" path="res://assets/props3d/kite_shield/kite_shield_1k.gltf" id="2_iuend"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_gahj3"]
+size = Vector3(0.49979, 1.39413, 0.123958)
+
+[node name="Shield" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_ych6d")
+size_class = 1
+footprint = Vector3(0.54325, 1.39413, 0.134737)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_iuend")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.98023e-08, 0.746578, -0.0151191)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.697067, 0)
+shape = SubResource("BoxShape3D_gahj3")

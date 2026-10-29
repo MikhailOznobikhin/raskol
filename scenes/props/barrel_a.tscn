@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_anqa5"]
+[ext_resource type="ArrayMesh" path="res://assets/props3d/wooden_barrels_01/parts/barrel01.res" id="2_e1832"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_u3fog"]
+size = Vector3(0.68356, 0.916781, 0.683558)
+
+[node name="BarrelA" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_anqa5")
+footprint = Vector3(0.743, 0.916781, 0.742998)
+
+[node name="Model" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.2517e-06, -2.11084e-05, 1.3113e-06)
+
+[node name="Barrel01" type="MeshInstance3D" parent="Model"]
+mesh = ExtResource("2_e1832")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45839, 0)
+shape = SubResource("BoxShape3D_u3fog")

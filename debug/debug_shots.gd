@@ -133,7 +133,10 @@ func _run_tour() -> void:
 		print("[DebugShots] viewport=", get_viewport().get_visible_rect().size)
 	# SHOT_BISECT=1 — на первой точке ещё и цена каждого эффекта этапа 7
 	var bisect := OS.get_environment("SHOT_BISECT") == "1"
-	for spot in get_tree().get_nodes_in_group("photo_spot"):
+	# SHOT_DRESS=only — только кадры этапа 8 (быстрая проверка)
+	var spots: Array = [] if OS.get_environment("SHOT_DRESS") == "only" \
+		else get_tree().get_nodes_in_group("photo_spot")
+	for spot in spots:
 		if spot is Node3D:
 			cam.global_transform = (spot as Node3D).global_transform
 			cam.make_current()
@@ -145,6 +148,18 @@ func _run_tour() -> void:
 			if bisect:
 				bisect = false
 				await _bisect_fx()
+	# SHOT_DRESS=1 — ещё кадры этапа 8: по одному на комнату и крупно факел
+	if OS.get_environment("SHOT_DRESS") in ["1", "only"]:
+		var dungeon := get_tree().get_first_node_in_group("dungeon")
+		var dressing = dungeon.get("dressing") if dungeon else null
+		if dressing:
+			for v in dressing.views:
+				cam.global_position = v["from"]
+				cam.look_at(v["to"])
+				cam.make_current()
+				for i in SETTLE_FRAMES:
+					await get_tree().process_frame
+				_save_shot("res://_screenshots/" + stage, v["name"])
 	cam.queue_free()
 	if original_cam:
 		original_cam.make_current()

@@ -12,6 +12,7 @@ build/
 tools/*
 !tools/*/
 tools/*/*
+!tools/snap_props_to_floor.gd
 # .gdignore-маркеры коммитим: без них Godot сканирует venv/сэмблы и
 # --export-release падает на тестовых wav из scipy.
 !tools/*/.gdignore

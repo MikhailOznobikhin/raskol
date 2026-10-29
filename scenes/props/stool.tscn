@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_u7xta"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wooden_stool_01/wooden_stool_01_1k.gltf" id="2_x76q0"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4s6cm"]
+size = Vector3(0.391327, 0.437353, 0.406974)
+
+[node name="Stool" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_u7xta")
+size_class = 1
+footprint = Vector3(0.425355, 0.437353, 0.442363)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_x76q0")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3.67974e-05, 0)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.218676, 0)
+shape = SubResource("BoxShape3D_4s6cm")

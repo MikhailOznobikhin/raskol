@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_xdbvl"]
+[ext_resource type="PackedScene" path="res://assets/props3d/round_wooden_table_01/round_wooden_table_01_1k.gltf" id="2_ijfno"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_qpj7v"]
+size = Vector3(1.2874, 1.00502, 1.2874)
+
+[node name="TableRound" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_xdbvl")
+footprint = Vector3(1.39935, 1.00502, 1.39935)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_ijfno")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0013184, -5.96046e-08)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.502511, 0)
+shape = SubResource("BoxShape3D_qpj7v")
