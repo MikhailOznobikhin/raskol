@@ -50,6 +50,8 @@ var mat_wall: ShaderMaterial
 var mat_ceil: Material
 var mat_metal: StandardMaterial3D
 var mat_wood: StandardMaterial3D
+## Структурный брус: каркасы, полки, настилы. Темнее досок бочек и ящиков.
+var mat_beam: StandardMaterial3D
 var mat_dark: StandardMaterial3D
 var mat_glow: StandardMaterial3D
 var mat_flame: StandardMaterial3D
@@ -60,9 +62,13 @@ var mat_banner: StandardMaterial3D
 ## Светлый тёсаный камень: плинт и карниз.
 var mat_cap: ShaderMaterial
 ## Свод и потолок: кладка пака по метрическим UV, без трипланара.
-var mat_vault: StandardMaterial3D
+var mat_vault: Material
 ## Кирпич набора: ступени и заливка пустот за кладкой.
-var mat_brick: StandardMaterial3D
+var mat_brick: Material
+## Кладка обшивки стен и арок набора: UV меша, 3.66 множителя на 512 px/м.
+var mat_brick_kit: Material
+## Плиты пола набора: UV меша, коббл 10–20 см.
+var mat_floor_kit: Material
 var lights: Array = []
 var flames: Array = []
 var shadow_t := 0.0
@@ -78,8 +84,8 @@ var kit_ok := false
 var _arch_open := {}
 ## Материалы стволов колонн: ключ — округлённые (радиус, высота).
 var _pier_mats := {}
-## Материал заплаток земли с приглушённым альбедо (см. _dirt_material).
-var _mat_dirt: Material = null
+## Заплатки земли на полу залов (res://materials/floor_dirt.tres).
+var mat_dirt: Material
 
 
 func _ready() -> void:
@@ -90,8 +96,9 @@ func _ready() -> void:
 
 
 func build() -> void:
-	_load_kit()
+	# Материалы первыми: _load_kit сразу вешает их на меши набора.
 	_materials()
+	_load_kit()
 	_load_map()
 	_shapes()
 	_build_floor()
@@ -130,37 +137,30 @@ func _load_kit() -> void:
 	kit_ok = kit.has("wall_4m") and kit.has("wall_2m") and kit.has("floor_4m")
 	if not kit_ok:
 		push_warning("в наборе dungeon_kit нет нужных модулей")
-	_fix_kit_uv()
+	_apply_kit_materials()
 
 
-## Тексельная плотность модулей набора. Атлас пака (2048 px) покрывает у арки
-## 15 м, у плиты пола — 5.9 м, то есть 134 и 346 px/м рядом со стенами на
-## 512 px/м. Правим множитель UV на самом меше: он общий для всех экземпляров.
-func _fix_kit_uv() -> void:
+## Модули набора получают общие материалы из res://materials/. Раньше у
+## каждого модуля оставался родной glTF-материал с uv1_scale, подогнанным под
+## 512 px/м: масштаб кладки зависел от того, кто и когда правил меш, а у стен
+## и свода не было ни грязи у пола, ни вариации тона. Теперь масштаб —
+## параметр одного материала, общий для всех экземпляров модуля.
+## Тексельная плотность: атлас пака 2048 px покрывает 4 м (0.25 uv/м),
+## ровно как у потолка и гуська.
+func _apply_kit_materials() -> void:
 	for name in ["floor_4m"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 346.0)
+		_set_surface_material(kit.get(name), mat_floor_kit)
 	for name in ["arch_2m", "arch_2m_b"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 134.0)
-	# Стены набора: 140 px/м в исходных UV — кирпич был в 3.7 раза крупнее
-	# кирпича проёма и не совпадал с потолком.
+		_set_surface_material(kit.get(name), mat_brick_kit)
 	for name in ["wall_4m", "wall_4m_b", "wall_2m", "wall_2m_b"]:
-		_scale_surface_uv(kit.get(name), 512.0 / 140.0)
+		_set_surface_material(kit.get(name), mat_brick_kit)
 
 
-func _scale_surface_uv(mesh: Mesh, factor: float) -> void:
-	if mesh == null:
+func _set_surface_material(mesh: Mesh, mat: Material) -> void:
+	if mesh == null or mat == null:
 		return
 	for i in mesh.get_surface_count():
-		var src: Material = mesh.surface_get_material(i)
-		if src is not StandardMaterial3D:
-			continue
-		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
-		m.uv1_scale = m.uv1_scale * factor
-		# В glTF пак помечен двусторонним: изнанка кладки и свода видна как
-		# гладкая плита и пробивается сквозь соседние стены. С отсечением
-		# задних граней сквозь неё видна кирпичная коробка тела стены.
-		m.cull_mode = BaseMaterial3D.CULL_BACK
-		mesh.surface_set_material(i, m)
+		mesh.surface_set_material(i, mat)
 
 
 
@@ -201,101 +201,15 @@ func _cell_hash(x: int, y: int, salt: int = 0) -> int:
 	return absi(h >> 3)
 
 
-func _tex(name: String) -> Texture2D:
-	var path := "res://assets/tex3d/%s.png" % name
+## Общий материал из res://materials/. Материалы — файлы, а не объекты,
+## созданные в коде: правка одного .tres меняет все поверхности сразу, а
+## дифф ресурса виден в git. Пересобрать их — src/make_materials.gd.
+func _mat(mat_name: String) -> Material:
+	var path := "res://materials/%s.tres" % mat_name
 	if not ResourceLoader.exists(path):
+		push_error("нет материала " + path + " (собери tools/make_materials.gd)")
 		return null
 	return load(path)
-
-
-## Текстура из атласов набора Medieval Underground Dungeon.
-func _kit_tex(name: String) -> Texture2D:
-	var path := "res://assets/models/dungeon_kit/textures/%s" % name
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path)
-
-
-## Кирпич по UV меша, без трипланара: нужен своду, где кладка должна идти по
-## дуге, а не проецироваться сверху. COLOR вершин даёт потоновый разброс.
-func _brick_material_uv(uv: float) -> StandardMaterial3D:
-	var m := _brick_material(uv)
-	m.uv1_triplanar = false
-	m.vertex_color_use_as_albedo = true
-	return m
-
-
-## Материал процедурного потолка и ступеней из атласа набора.
-func _brick_material(uv: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var a := _kit_tex("brickwalls_basecolor.jpg")
-	var n := _kit_tex("brickwalls_normal.jpg")
-	var mr := _kit_tex("brickwalls_mr.png")
-	if a != null:
-		m.albedo_texture = a
-	if n != null:
-		m.normal_enabled = true
-		m.normal_texture = n
-		m.normal_scale = 1.0
-	if mr != null:
-		# metallicRoughness набора: зелёный канал — шероховатость, синий — металл.
-		m.roughness_texture = mr
-		m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
-		m.metallic_texture = mr
-		m.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_BLUE
-	# roughness и metallic у StandardMaterial3D — множители карты, а не значения:
-	# нулевой metallic гасит metallic_texture целиком.
-	m.roughness = 1.0
-	m.metallic = 1.0
-	m.metallic_specular = 0.4
-	m.uv1_scale = Vector3(uv, uv, uv)
-	m.uv1_triplanar = true
-	# Встроенный трипланар по умолчанию в локальных координатах: у блоков
-	# стены базис растянут по Y, и кирпич ехал вертикальными полосами.
-	m.uv1_world_triplanar = true
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	return m
-
-
-## Камень: свой трипланар-шейдер, а не StandardMaterial3D. У встроенного
-## трипланара строка текстуры на гранях вдоль X уходит по вертикали, и ряды
-## кладки на половине стен бегут вверх по стене.
-func _make_stone(tex_name: String, tint: Color, rough: float, uv: float,
-		nscale: float) -> ShaderMaterial:
-	var sh: Shader = load("res://assets/shaders/stone_triplanar.gdshader")
-	var m := ShaderMaterial.new()
-	m.shader = sh
-	m.set_shader_parameter("albedo_tex", _tex(tex_name + "_albedo"))
-	m.set_shader_parameter("normal_tex", _tex(tex_name + "_normal"))
-	m.set_shader_parameter("rough_tex", _tex(tex_name + "_rough"))
-	m.set_shader_parameter("tint", tint)
-	m.set_shader_parameter("uv_scale", uv)
-	m.set_shader_parameter("normal_scale", nscale)
-	m.set_shader_parameter("roughness_mult", rough)
-	return m
-
-
-func _make_mat(tex_name: String, tint: Color, rough: float, metal: float, uv: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	var a := _tex(tex_name + "_albedo")
-	var n := _tex(tex_name + "_normal")
-	var r := _tex(tex_name + "_rough")
-	if a:
-		m.albedo_texture = a
-	if n:
-		m.normal_enabled = true
-		m.normal_texture = n
-		m.normal_scale = 1.45
-	if r:
-		m.roughness_texture = r
-	m.albedo_color = tint
-	m.roughness = rough
-	m.metallic = metal
-	m.metallic_specular = 0.4
-	m.uv1_scale = Vector3(uv, uv, uv)
-	m.uv1_triplanar = true
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	return m
 
 
 func _materials() -> void:
@@ -303,23 +217,27 @@ func _materials() -> void:
 		push_warning("НЕТ ТЕКСТУР tex3d — стены будут плоскими")
 	# Этап A: у пола, стен, свода и трима разные роли. Холодный пол, тёплый
 	# камень стен и копчёный свод дают иерархию, которой не было у одного tint.
-	# Плотность всех каменных поверхностей сведена к ~512 px/м (текстура
-	# stone_wall 1024 px → плитка 2 м): разброс по уровню был 15×, из-за него
-	# кирпич двери был в 11 раз крупнее кирпича соседней стены.
-	mat_floor = _make_stone("stone_floor", Color(0.87, 0.86, 0.85), 0.68, 0.5, 1.3)
-	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.5, 1.5)
-	# Кирпич набора: ступени, заливка пустот. Атлас 2048 px на 4 м = 512 px/м.
-	mat_brick = _brick_material(0.25)
-	# Потолок и свод — та же кладка пака, что у стен (атлас Brick_Walls
-	# 2048 px, 0.25 uv/м = 512 px/м). Раньше потолок брал stone_wall и в кадре
-	# читался отдельной плиткой, не связанной ни со стенами, ни с гусёком.
-	mat_vault = _brick_material_uv(0.25)
+	# Плотность всех каменных поверхностей ~512 px/м: атлас пака 2048 px на 4 м.
+	# Пол «аварийного» варианта (набор не загрузился) — плоский камень.
+	mat_floor = _mat("floor_stone_plain") as ShaderMaterial
+	# Тесаная кладка: косяки арок и обломки, трипланар по миру.
+	mat_wall = _mat("wall_stone_blocks") as ShaderMaterial
+	# Плиты пола набора и кладка обшивки стен/арок: UV меша.
+	mat_floor_kit = _mat("floor_cobble")
+	mat_brick_kit = _mat("wall_brick")
+	# Кирпич процедурных коробок: тело стены, ступени, стволы колонн.
+	mat_brick = _mat("brick_blocks")
+	# Потолок и свод — та же кладка пака, но на 20 % темнее стен: иначе
+	# потолок становится самой светлой поверхностью кадра.
+	mat_vault = _mat("ceiling_vault")
 	mat_ceil = mat_vault
-	# Тёсаный камень ступеней и порталов. Прежний почти белый тинт в кадре
-	# читался светящимся пластиком рядом с кладкой набора.
-	mat_cap = _make_stone("stone_wall", Color(0.66, 0.6, 0.54), 0.85, 0.5, 1.1)
-	mat_metal = _make_mat("metal", Color(0.8, 0.82, 0.9), 0.45, 0.85, 1.2)
-	mat_wood = _make_mat("wood", Color(0.9, 0.85, 0.8), 0.8, 0.0, 1.0)
+	# Тёсаный камень рёбер, ступеней и порталов: тёмный выветренный камень
+	# одной семьи с кладкой, а не светлые блоки-заглушки.
+	mat_cap = _mat("stone_trim") as ShaderMaterial
+	mat_metal = _mat("iron") as StandardMaterial3D
+	mat_wood = _mat("wood_planks") as StandardMaterial3D
+	mat_beam = _mat("wood_beam") as StandardMaterial3D
+	mat_dirt = _mat("floor_dirt")
 	mat_dark = StandardMaterial3D.new()
 	mat_dark.albedo_color = Color(0.05, 0.05, 0.06)
 	mat_dark.roughness = 0.95
@@ -594,27 +512,6 @@ func _block_has_floor(bx: int, by: int) -> bool:
 	return false
 
 
-## Материал заплатки земли: родной «песок» набора светлее каменного пола и в
-## тёмном зале читается белым листом бумаги. Глушим альбедо до сырой земли,
-## карты набора (normal и metallic-roughness) остаются родными.
-func _dirt_material() -> Material:
-	if _mat_dirt != null:
-		return _mat_dirt
-	var mesh: Mesh = _kit_mesh("dirt", false)
-	if mesh == null or mesh.get_surface_count() == 0:
-		return null
-	var src: Material = mesh.surface_get_material(0)
-	if src is StandardMaterial3D:
-		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
-		# Пол стал светлее после приведения плотности: прежний тёмный тинт
-		# превращал заплатку в чёрную дыру, а не в сырую землю.
-		m.albedo_color = Color(0.52, 0.47, 0.4)
-		_mat_dirt = m
-	else:
-		_mat_dirt = src
-	return _mat_dirt
-
-
 ## Заплатки земли из набора: сбивают регулярность плит, ставятся по одной
 ## на далёкий от стен блок.
 func _scatter_dirt() -> void:
@@ -633,10 +530,12 @@ func _scatter_dirt() -> void:
 			if rng.randf() > 0.12:
 				continue
 			var yaw: float = rng.randf() * TAU
+			# 6 мм над плитой: хватает против мерцания и не видно, что лист лежит
+			# над полом (12 мм на глазного уровне читались парящим листом).
 			var mi := _kit_place("dirt", Transform3D(Basis(Vector3.UP, yaw),
-				Vector3((bx + 1) * T, 0.012, (by + 1) * T)), false)
+				Vector3((bx + 1) * T, 0.006, (by + 1) * T)), false)
 			if mi != null:
-				mi.material_override = _dirt_material()
+				mi.material_override = mat_dirt
 				placed += 1
 	print("FLOOR dirt patches=", placed)
 
@@ -829,22 +728,15 @@ func _cove_strip(st: SurfaceTool, xf: Transform3D, d: Vector2i, y0: float,
 ## Материал ствола колонны: кирпич набора, как у стен, но по цилиндрической
 ## развёртке CylinderMesh (u 0…1 по обводу, v 0…1 по высоте). World-трипланар
 ## на цилиндре смешивал две проекции и гнал курсы кладки веером.
-func _column_material(r: float, h: float) -> StandardMaterial3D:
+func _column_material(r: float, h: float) -> Material:
 	var key := Vector2i(int(round(r * 100.0)), int(round(h * 100.0)))
 	if _pier_mats.has(key):
 		return _pier_mats[key]
-	var m: StandardMaterial3D = null
-	var wall_mesh: Mesh = kit.get("wall_2m")
-	if wall_mesh != null and wall_mesh.get_surface_count() > 0:
-		var src: Material = wall_mesh.surface_get_material(0)
-		if src is StandardMaterial3D:
-			m = (src as StandardMaterial3D).duplicate()
-	if m == null:
-		m = _brick_material_uv(0.25)
-	m.uv1_triplanar = false
-	m.vertex_color_use_as_albedo = false
-	# 2048 px на 4 м: 0.25 uv/м ≈ 512 px/м, как у стен и потолка.
-	m.uv1_scale = Vector3(TAU * r * 0.25, h * 0.25, 1.0)
+	var m: ShaderMaterial = (mat_brick_kit as ShaderMaterial).duplicate()
+	# CylinderMesh: u 0…1 по обводу, v 0…1 по высоте. Плотность 512 px/м
+	# (0.25 uv/м) сохраняется, поэтому курсы кладки на стволе совпадают
+	# с курсами стен.
+	m.set_shader_parameter("uv_scale", Vector2(TAU * r * 0.25, h * 0.25))
 	_pier_mats[key] = m
 	return m
 
@@ -1926,7 +1818,7 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(1.8, 0.1, 0.9), pos + Vector3(0, 0.9, 0), mat_wood)
 			for dx in [-0.75, 0.75]:
 				for dz in [-0.35, 0.35]:
-					_box(Vector3(0.1, 0.9, 0.1), pos + Vector3(dx, 0.45, dz), mat_wood)
+					_box(Vector3(0.1, 0.9, 0.1), pos + Vector3(dx, 0.45, dz), mat_beam)
 		"anvil":
 			_box(Vector3(1.0, 0.4, 0.5), pos + Vector3(0, 0.6, 0), mat_metal)
 			_box(Vector3(0.5, 0.4, 0.4), pos + Vector3(0, 0.2, 0), mat_metal)
@@ -1955,7 +1847,7 @@ func _prop(type: String, pos: Vector3) -> void:
 			_chain_prop(pos)
 		"refuse":
 			for i in 6:
-				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_dark)
+				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_cap)
 		"stairs":
 			# Простые кубы с текстурой кирпича: ступень — сплошной блок от пола,
 			# без отдельных проступей из тёсаного камня.
@@ -1978,20 +1870,20 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(0.98, 0.16, 0.98), pos + Vector3(0, ph - 0.4, 0), mat_brick)
 			_box(Vector3(1.14, 0.24, 1.14), pos + Vector3(0, ph - 0.16, 0), mat_brick)
 		"shelf":
-			_box(Vector3(1.4, 1.9, 0.45), pos + Vector3(0, 0.95, 0), mat_wood)
+			_box(Vector3(1.4, 1.9, 0.45), pos + Vector3(0, 0.95, 0), mat_beam)
 			for i in 3:
-				_box(Vector3(1.25, 0.05, 0.4), pos + Vector3(0, 0.5 + i * 0.55, 0.03), mat_metal)
+				_box(Vector3(1.25, 0.05, 0.4), pos + Vector3(0, 0.5 + i * 0.55, 0.03), mat_wood)
 				_box(Vector3(0.3, 0.25, 0.25), pos + Vector3(-0.35 + i * 0.35, 0.65 + i * 0.55, 0.05), mat_wood)
 		"bed":
-			_box(Vector3(1.9, 0.32, 0.85), pos + Vector3(0, 0.16, 0), mat_wood)
+			_box(Vector3(1.9, 0.32, 0.85), pos + Vector3(0, 0.16, 0), mat_beam)
 			var straw := _box(Vector3(1.75, 0.12, 0.7), pos + Vector3(0, 0.36, 0), mat_wood)
-			straw.material_override = mat_metal
+			straw.material_override = mat_beam
 			_box(Vector3(0.5, 0.16, 0.7), pos + Vector3(-0.6, 0.46, 0), mat_wood)
 		"rubble":
 			for i in 7:
 				_sphere(0.12 + randf() * 0.14, pos + Vector3(randf_range(-0.7, 0.7), 0.1, randf_range(-0.7, 0.7)), mat_wall)
 		"rack":
-			_box(Vector3(1.2, 0.12, 0.4), pos + Vector3(0, 0.06, 0), mat_wood)
+			_box(Vector3(1.2, 0.12, 0.4), pos + Vector3(0, 0.06, 0), mat_beam)
 			for i in 3:
 				_cyl(0.03, 1.7, pos + Vector3(-0.35 + i * 0.35, 0.85, 0), mat_metal)
 			_box(Vector3(1.2, 0.1, 0.35), pos + Vector3(0, 1.55, 0), mat_metal)
@@ -2010,15 +1902,15 @@ func _prop(type: String, pos: Vector3) -> void:
 		"shelf":
 			for i in 3:
 				_box(Vector3(1.6, 0.06, 0.4), pos + Vector3(0, 0.6 + i * 0.6, 0), mat_wood)
-			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(-0.75, 0.9, 0), mat_wood)
-			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(0.75, 0.9, 0), mat_wood)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(-0.75, 0.9, 0), mat_beam)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(0.75, 0.9, 0), mat_beam)
 		"bed":
-			_box(Vector3(1.9, 0.35, 1.0), pos + Vector3(0, 0.2, 0), mat_wood)
+			_box(Vector3(1.9, 0.35, 1.0), pos + Vector3(0, 0.2, 0), mat_beam)
 			_box(Vector3(1.9, 0.1, 1.0), pos + Vector3(0, 0.42, 0), mat_wood)
 			_box(Vector3(0.6, 0.25, 1.0), pos + Vector3(-0.65, 0.55, 0), mat_wood)
 		"rubble":
 			for i in 8:
-				_sphere(0.18 + randf() * 0.12, pos + Vector3(randf_range(-0.6, 0.6), 0.12, randf_range(-0.6, 0.6)), mat_dark)
+				_sphere(0.18 + randf() * 0.12, pos + Vector3(randf_range(-0.6, 0.6), 0.12, randf_range(-0.6, 0.6)), mat_cap)
 		"brazier_stand":
 			_cyl(0.12, 1.6, pos + Vector3(0, 0.8, 0), mat_metal)
 			var bowl := _cyl(0.35, 0.2, pos + Vector3(0, 1.65, 0), mat_metal)
@@ -2034,8 +1926,8 @@ func _prop(type: String, pos: Vector3) -> void:
 			lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": coals})
 		"weapon_rack":
 			_box(Vector3(1.6, 0.1, 0.3), pos + Vector3(0, 1.2, 0), mat_wood)
-			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_wood)
-			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_wood)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_beam)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_beam)
 			for i in 3:
 				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
 		"puddle", "cistern_pool":

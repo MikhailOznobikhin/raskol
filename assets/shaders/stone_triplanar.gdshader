@@ -18,8 +18,20 @@ uniform float normal_scale = 1.0;
 uniform float roughness_mult = 0.85;
 uniform float metallic_value = 0.0;
 uniform float specular_value = 0.4;
+// Ниже этого значения шероховатость не опускается: сухой камень не блестит.
+uniform float roughness_floor : hint_range(0.0, 1.0) = 0.4;
 // Крупная вариация тона по миру: рвёт «обои» из повторяющейся кладки.
 uniform float macro_strength = 0.22;
+// Атласы пака (metalRoughness) держат шероховатость в зелёном канале,
+// grayscale-текстуры tex3d — в красном.
+uniform bool rough_from_green = false;
+
+// Грязь/сырость у пола: кладка стоит на полу, а не висит над ним.
+uniform vec4 grime_color : source_color = vec4(0.12, 0.10, 0.08, 1.0);
+uniform float floor_y = 0.0;
+uniform float grime_height = 0.85;
+uniform float grime_strength : hint_range(0.0, 1.0) = 0.45;
+uniform float damp_strength : hint_range(0.0, 1.0) = 0.3;
 
 
 void fragment() {
@@ -37,9 +49,16 @@ void fragment() {
 	vec3 alb = texture(albedo_tex, uvx).rgb * aw.x
 		+ texture(albedo_tex, uvy).rgb * aw.y
 		+ texture(albedo_tex, uvz).rgb * aw.z;
-	float rgh = texture(rough_tex, uvx).r * aw.x
-		+ texture(rough_tex, uvy).r * aw.y
-		+ texture(rough_tex, uvz).r * aw.z;
+	float rgh = 0.0;
+	if (rough_from_green) {
+		rgh = texture(rough_tex, uvx).g * aw.x
+			+ texture(rough_tex, uvy).g * aw.y
+			+ texture(rough_tex, uvz).g * aw.z;
+	} else {
+		rgh = texture(rough_tex, uvx).r * aw.x
+			+ texture(rough_tex, uvy).r * aw.y
+			+ texture(rough_tex, uvz).r * aw.z;
+	}
 
 	vec3 nx = texture(normal_tex, uvx).xyz * 2.0 - 1.0;
 	vec3 ny = texture(normal_tex, uvy).xyz * 2.0 - 1.0;
@@ -65,9 +84,14 @@ void fragment() {
 		+ sin(wp.y * 2.1) * 2.2));
 	float macro_k = mix(1.0 - macro_strength, 1.0 + macro_strength * 0.5, macro);
 
+	float h = clamp((wp.y - floor_y) / max(grime_height, 0.001), 0.0, 1.0);
+	float grime = (1.0 - smoothstep(0.0, 1.0, h)) * grime_strength;
+	vec3 alb_macro = alb * tint.rgb * COLOR.rgb * macro_k;
+	float rgh_g = mix(rgh * roughness_mult * mix(0.92, 1.06, macro), 0.22, grime * damp_strength);
+
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
-	ALBEDO = alb * tint.rgb * COLOR.rgb * macro_k;
-	ROUGHNESS = clamp(rgh * roughness_mult * mix(0.92, 1.06, macro), 0.05, 1.0);
+	ALBEDO = mix(alb_macro, grime_color.rgb, grime) * (1.0 - grime * damp_strength * 0.25);
+	ROUGHNESS = clamp(max(rgh_g, roughness_floor), 0.05, 1.0);
 	METALLIC = metallic_value;
 	SPECULAR = specular_value;
 }

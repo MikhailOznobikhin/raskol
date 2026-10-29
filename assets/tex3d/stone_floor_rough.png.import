@@ -3,25 +3,26 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfbvunklqnadh"
-path="res://.godot/imported/stone_floor_rough.png-1e3b2f97e4b3314bb77c819cc1a52ec5.ctex"
+path.s3tc="res://.godot/imported/stone_floor_rough.png-1e3b2f97e4b3314bb77c819cc1a52ec5.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/tex3d/stone_floor_rough.png"
-dest_files=["res://.godot/imported/stone_floor_rough.png-1e3b2f97e4b3314bb77c819cc1a52ec5.ctex"]
+dest_files=["res://.godot/imported/stone_floor_rough.png-1e3b2f97e4b3314bb77c819cc1a52ec5.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

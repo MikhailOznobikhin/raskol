@@ -1,0 +1,29 @@
+[gd_resource type="ShaderMaterial" load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://shaders/stone_world.gdshader" id="1_p6gwm"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/tile_floor_basecolor.jpg" id="2_1rshq"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/tile_floor_mr.png" id="3_u1axv"]
+[ext_resource type="Texture2D" path="res://assets/models/dungeon_kit/textures/tile_floor_normal.jpg" id="4_y2ok5"]
+[ext_resource type="Texture2D" path="res://environment/variation_noise.tres" id="5_oae0h"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_p6gwm")
+shader_parameter/albedo_tex = ExtResource("2_1rshq")
+shader_parameter/normal_tex = ExtResource("4_y2ok5")
+shader_parameter/mr_tex = ExtResource("3_u1axv")
+shader_parameter/albedo_tint = Color(0.86, 0.84, 0.82, 1)
+shader_parameter/uv_scale = Vector2(1.7, 1.7)
+shader_parameter/normal_strength = 0.55
+shader_parameter/roughness_mult = 1.0
+shader_parameter/roughness_floor = 0.6
+shader_parameter/specular_value = 0.18
+shader_parameter/metallic_mult = 0.0
+shader_parameter/variation_noise = ExtResource("5_oae0h")
+shader_parameter/variation_scale = 0.055
+shader_parameter/variation_strength = 0.15
+shader_parameter/grime_color = Color(0.12, 0.1, 0.08, 1)
+shader_parameter/floor_y = 0.0
+shader_parameter/grime_height = 0.7
+shader_parameter/grime_strength = 0.0
+shader_parameter/damp_strength = 0.0

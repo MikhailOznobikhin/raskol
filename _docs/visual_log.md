@@ -77,3 +77,68 @@
   - The pack has no ceiling/vault-span module (`Brick_wall`, `Brick_wall_corner`, `Brick_wall_doorway`, `Tile_floor`, `Sand`, torch chest only), so the flat ceiling above the 5060 m² hall is still procedural; a real barrel vault over the span needs a `ceil_h` profile per bay (separate task).
   - `_build_ribs()` still unused; no UV2/lightmaps (dynamic lights only).
 - To verify: run `build.ps1 -Test` then `build.ps1 -Shots`, open `tools/shot_3d_wall.png`, `tools/shot_3d_vault.png`, `tools/shot_3d_cistern.png`.
+
+## Stage 4
+- Stage number: 4 (материалы и импорт текстур)
+- Branch: `visual/stage-4`
+- Files changed (all edits by this stage):
+  - `project.godot` — `[rendering] textures/default_filters/anisotropic_filtering_level=4` (16x, ключ и значение проверены через `ProjectSettings.get_property_list()`: `rendering/textures/default_filters/anisotropic_filtering_level = 4`); `[importer_defaults] texture`: `mipmaps/generate=true`, `detect_3d/compress_to=1`, `compress/mode=0`.
+  - 13 `.import` в `assets/models/dungeon_kit/textures/` и 12 `.import` в `assets/tex3d/` — `compress/mode=2` (VRAM Compressed), `mipmaps/generate=true`, `detect_3d/compress_to=0`; для `*_normal.*` дополнительно `compress/normal_map=2` (Enable) и `compress/high_quality=true`; `process/normal_map_invert_y=false`.
+  - `shaders/stone_world.gdshader` (новый) — камень по UV меша: вариация тона по миру + грязь/сырость у пола.
+  - `assets/shaders/stone_triplanar.gdshader` — добавлены `roughness_floor`, `rough_from_green`, `grime_color`, `floor_y`, `grime_height`, `grime_strength`, `damp_strength`; грязь примешивается к ALBEDO и ROUGHNESS.
+  - `src/make_materials.gd` (новый генератор; каталог `tools/` в .gitignore, поэтому скрипт лежит в `src/`) — собирает `.tres`.
+  - `res://materials/*.tres` (11), `res://environment/variation_noise.tres` (новые).
+  - `scripts/dungeon.gd` — `_materials()` загружает `.tres` вместо сборки материалов в коде; `_mat()`; `_apply_kit_materials()` вместо `_fix_kit_uv()`/`_scale_surface_uv()`; `_column_material()` возвращает ShaderMaterial с `uv_scale` по развёртке цилиндра; `_build_floor()`/`_scatter_dirt()` — заплатка земли на `floor_dirt.tres` и высота 0.006 м; удалены `_make_stone`, `_make_mat`, `_brick_material`, `_brick_material_uv`, `_dirt_material`, `_tex`, `_kit_tex`, `_mat_dirt`; каркасы мебели переведены на `mat_beam`, «отбросы»/обломки — на `mat_cap` вместо `mat_dark`, стружка на кровати — на `mat_beam` вместо `mat_metal`.
+- Node paths (материалы назначаются на меш, не на узел, поэтому покрываются все экземпляры):
+  - `Dungeon/Walls_wall_2m` (259), `Dungeon/Walls_wall_2m_b` (207) — `res://materials/wall_brick.tres` (кладка пака по UV меша, ×3.66 к UV = 512 px/м)
+  - плиты `floor_4m` (461) — `res://materials/floor_cobble.tres` (×1.70 к UV)
+  - модули арок `arch_2m`/`arch_2m_b` (29) — `res://materials/wall_brick.tres`
+  - меш потолка `Dungeon` (SurfaceTool) и `Dungeon/VaultCove` — `res://materials/ceiling_vault.tres` (UV в метрах, `uv_scale` 0.25)
+  - заплатки земли `dirt` (14) — `res://materials/floor_dirt.tres`
+  - рёбра/портал/подставка рычага/обломки — `res://materials/stone_trim.tres`
+  - тело стен, ступени, стволы колонн — `res://materials/brick_blocks.tres` (трипланар 0.25 uv/м)
+  - косяки арок, обломки `mat_wall` — `res://materials/wall_stone_blocks.tres`
+  - бочки/ящики — `wood_planks.tres`; столы, полки, кровати, стойки — `wood_beam.tres`; скобы, решётки, фонарный столб, тележка, арочные стяжки — `iron.tres`
+- Exact property values (в `.tres`, собираются `src/make_materials.gd`):
+  - `wall_brick`: tint (0.94,0.91,0.87), uv_scale (3.66,3.66), normal_strength 0.70, roughness_mult 1.05, roughness_floor 0.55, specular 0.20, metallic_mult 0, variation_strength 0.22, grime_height 1.1, grime_strength 0.45, damp_strength 0.35
+  - `floor_cobble`: tint (0.86,0.84,0.82), uv_scale (1.70,1.70), normal_strength 0.55, roughness_floor 0.60, specular 0.18, variation_strength 0.15, grime_strength 0.0
+  - `ceiling_vault`: tint (0.72,0.70,0.66) — на 23 % темнее стен, uv_scale (0.25,0.25), normal_strength 0.60, roughness_floor 0.62, grime 0
+  - `brick_blocks`: трипланар 0.25, tint (0.90,0.88,0.85), normal 0.70, roughness_floor 0.55, grime_height 0.9, `rough_from_green=true`
+  - `stone_trim`: трипланар 0.25, tint (0.62,0.58,0.55), normal 0.60, roughness_mult 1.10, roughness_floor 0.70, grime_height 1.1, grime_strength 0.55
+  - `wall_stone_blocks`: трипланар 0.25, tint (0.78,0.75,0.71), normal 0.65, roughness_floor 0.62
+  - `floor_dirt`: трипланар 0.25, tint (0.38,0.33,0.28), normal 0.45, roughness_floor 0.75, specular 0.12
+  - `floor_stone_plain` (аварийный пол): атлас `tile_floor`, трипланар 0.25
+  - `wood_planks`: tint (0.82,0.76,0.70), roughness 0.78, metallic 0, normal_scale 0.80, triplanar, texture_filter=5
+  - `wood_beam`: tint (0.62,0.57,0.52), roughness 0.82, normal_scale 0.90
+  - `iron`: tint (0.60,0.62,0.66), metallic 0.70, roughness 0.62, metallic_specular 0.35, normal_scale 0.60, uv1_scale 1.2
+  - `environment/variation_noise.tres`: NoiseTexture2D 512×512, FastNoiseLite SIMPLEX_SMOOTH, frequency 0.02, fractal FBM 3 октавы, seamless, skirt 0.15
+- Verified (что и как проверял):
+  - `build.ps1 -Import` → `[OK] Импорт пройден`; `build.ps1 -Test` → `[OK] TEST: TEST DONE escaped=true` (в автотесте `FLOOR kit tiles=461`, `FLOOR dirt patches=14`, `WALLS veneer straight=259 mirrored=207`, `PIERS cylinders=16`).
+  - Импорт текстур проверен замером, а не на глаз: временный headless-скрипт печатал `Image.get_format()`/`get_mipmap_count()` — альбедо 2048² → `DXT1`, `levels=11`; нормали → `BPTC_RGBA` (то есть ветка normal map, а не обычный цвет), `levels=11`; `_mr.png` 1024² → `levels=10`. До этапа: `mipmaps/generate=false` у всех 25 текстур.
+  - Фототур: `SHOT_STAGE=stage4` → `_screenshots/stage4/spot_01_torch_puddle.png` … `spot_10_cistern_area.png` (10 кадров). Кадры я просматривал (изображения читаются в этом окружении): кирпич читается рельефно и без глянца, потолок темнее стен, у пола видна полоса грязи, «заглушечных» серых блоков нет.
+  - Ориентация нормалей: A/B-прогон с `process/normal_map_invert_y=true` (кадры в `_screenshots/invert/`, каталог не коммичен) на тех же точках дал вывернутый рельеф — кирпич читался вдавленным; вернул `false`. Дополнительно: GLB-набор пересобран как glTF, где нормали строго +Y (OpenGL), то есть инверсия не нужна.
+- What could NOT do and why:
+  - **AO-карт в паке нет.** Есть только `*_mr.png` (G — шероховатость, B — металл). Поэтому `ao_enabled`/`AO`/`AO_LIGHT_AFFECT` не используются: затемнение у пола делается градиентом грязи. Шейдер `stone_world.gdshader` оставлен с sampler'ом AO не был — вместо `ao_tex` он берёт `mr_tex` и сэмплит `.gb`, иначе шероховатость читалась бы из R (там AO/пусто).
+  - **`roughness/mode` + `roughness/src_normal` не применялись**: карты пака уже работают как MR-атлас (канал читается явно в шейдере и `roughness_texture_channel=GREEN`), а grayscale-карты `tex3d/*_rough.png` лежат в R (значение по умолчанию `roughness/mode=0`). Смена режима упаковала бы канал в альфу и сломала оба пути.
+  - **Повтор текстуры снижен, но не устранён.** Атлас пака (4 м) по-прежнему повторяется на 30-метровой стене: `variation_strength 0.22` смягчает стыки, но на средней дистанции повтор кладки читается (видно на `spot_08_escape_view.png`). Полностью это лечится либо вторым, более крупным масштабом той же кладки, либо вершинными слоями — отдельная задача.
+  - **Светлая «плита» в кадре `spot_06_doorway` / `spot_04_dark_tunnel_arch` — не материал.** Временный зонд (печатал все `MeshInstance3D` в радиусе 4 м от камеры) показал только `floor_cobble`, `wall_brick` и `iron`. Это свод-плечо модуля стены пака, который из-за `WALL_SHIFT = -1.901` уходит в зал на 1.9 м; камера фототура стоит в 1 м от стены и смотрит изнутри этой скорлупы. Материал на ней теперь `wall_brick`, но геометрия — задача этапа 3Б, а поведение камеры — этапа 2.
+  - **Тёмные залы остались тёмными и зернистыми** (`spot_03_wall_curve_ceiling.png`): материалов это не касается, это свет/экспозиция — этап 6.
+  - **Лужи по-прежнему парят над полом** (`floor_y`/плейн на 0.025 м) — этап 5, не трогал.
+  - **Производительность не измерялась.** Добавлена одна выборка шума и одна `smoothstep` на пиксель; VRAM-сжатие снизило память текстур, но 60 FPS на GTX 1660 не замерялись.
+  - Плиты пола несут настоящий геометрический рельеф до 0.139 м **вниз** от y=0 (AABB меша), параллакса/heightmap в проекте нет вообще (`heightmap` не встречается ни в одном .gd/.tscn/.tres).
+- Uncommitted changes by another agent (`scripts/main3d.gd`, `scripts/settings.gd`, `scripts/settings_screen.gd`) замечены в рабочем дереве и НЕ трогались и НЕ коммитились этим этапом.
+- How to verify:
+  - `build.ps1 -Test` -> `[OK] TEST: TEST DONE escaped=true`
+  - `SHOT_STAGE=stage4 godot --path . -- --mission --photo-tour` -> 10 PNG в `_screenshots/stage4/`
+  - Пересобрать материалы после правки параметров: `godot --headless --path . --script res://src/make_materials.gd`
+
+### Acceptance criteria (Stage 4)
+
+| # | Criterion | Result | How checked |
+|---|---|---|---|
+| 1 | No parallax/heightmap artifacts on the floor near the camera; floor no longer blown out | **PASS** | `heightmap` не встречается ни в одном файле проекта (rg по .gd/.tscn/.tres) — параллакса нет вовсе. Пересвет ушёл после смены нормали на мипы: `floor_cobble` normal_strength 0.55, roughness_floor 0.60, tint 0.86; на `_screenshots/stage4/spot_05_floor_closeup.png` и `spot_08_escape_view.png` коббл читается без «кипения» и белых пятен (сравнение с `_screenshots/stage3_final/`). |
+| 2 | All env materials are shared .tres; texture_filter anisotropic; textures have mipmaps | **PASS** | 11 файлов в `res://materials/`; в `scripts/dungeon.gd` удалены все inline-конструкторы материалов, остался `_mat()` + fallback-динамика (вода, пламя, знамя). Все сэмплеры шейдеров объявлены `filter_linear_mipmap_anisotropic`; у `wood_planks`/`wood_beam`/`iron` `texture_filter=5` (LINEAR_WITH_MIPMAPS_ANISOTROPIC). Мипы: headless-замер `Image.get_mipmap_count()` = 11 (2048²) / 10 (1024²). Project setting anisotropic = 4 (16x) подтверждён через `ProjectSettings.get_property_list()`. |
+| 3 | Normal maps light bricks from the correct side | **PASS** | A/B-рендер тех же точек с `process/normal_map_invert_y=true` (`_screenshots/invert/`, не коммичен) дал вдавленный кирпич; с `false` верхние фаски кирпича светлеют под факелами, которые выше кадра (`_screenshots/stage4/spot_01_torch_puddle.png`). Плюс GLB-набор собран как glTF, где нормали +Y (OpenGL). |
+| 4 | Repetition much less visible on long walls; walls darker/damp near the floor | **PARTIAL** | Грязь: видна на `spot_08` — стена темнеет в нижних ~1.1 м, damp 0.35 (ALBEDO mix + ROUGHNESS к 0.22). Повтор: `variation_strength 0.22` + бесшовный NoiseTexture2D 512² (frequency 0.02) снимает обои на ближней дистанции, но атлас 4 м на 30-метровой стене ещё повторяется на средней дистанции. FAIL по второй половине критерия, честно. |
+| 5 | No placeholder-looking trims; ceiling not the brightest surface | **PASS** | `stone_wall_albedo.png` (серая блочная заглушка из tex3d) больше не используется ни одним материалом окружения: `stone_trim`/`wall_stone_blocks` переведены на атлас кладки пака (tint 0.62 / 0.78, roughness_floor 0.70 / 0.62), аварийный пол — на `tile_floor`. Потолок: `ceiling_vault` tint 0.72 против 0.94 у стены (−23 %), на `spot_08`/`spot_10` потолок темнее стен. |
+| 6 | No shader compile errors | **PASS** | Лог фототура (`tools/_tour.log`) и `build.ps1 -Test` без `SHADER ERROR`/`error compiling`; оба шейдера отрисованы в кадре (грязь и вариация видны), значит скомпилировались и исполнились. |
