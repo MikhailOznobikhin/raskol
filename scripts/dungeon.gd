@@ -4,27 +4,15 @@ extends Node3D
 class_name Dungeon
 
 const T := 2.0
-## Высота стен: гребень свода модуля стены набора Medieval Underground Dungeon
-## (4,844 м). Потолок ложится точно на эту плоскость, и на стыке нет щели.
+## Высота прямых стен и нижней плоскости потолка.
 const WALL_H := 4.844
 ## Набор PBR-модулей: стены, арки, пол, факелы. Собран src/build_dungeon_kit.py.
 const KIT := "res://assets/models/dungeon_kit/dungeon_kit.glb"
 ## Какие грани обнажены — по одной клетке на направление.
 const SIDES := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-## Видимая кладка модуля стены набора: от плоскости грани клетки (origin модуля)
-## до лицевой кладки 1,88 м (замер tools/tmp_kit_geom.gd). Модуль — не стена на
-## грани клетки, а ниша: вертикальная кладка стоит в глубине клетки, а свод
-## перекидывается над нишей с гребнем на грани клетки.
-const FACE_Z := 1.88
-## Коллизия стен: толщина равна слою от видимой грани до задней грани клетки.
-const COL_THICK := maxf(0.3, T - FACE_Z)
-## Выше 2,5 м игрок не достаёт: свод висит на 3,8–4,84 м, коллизии там не нужно.
-const COL_H := maxf(4.0, WALL_H)
-## Заливка пустот за кладкой: высота ниже пяты свода набора.
-const GAP_FILL_H := 3.1
-## Квадратный каменный замок на наружных поворотах кладки.
-const CORNER_LOCK_SIZE := 0.28
+## Высота коллизии отдельных опор.
+const COL_H := 2.5
 ## Проход арки набора: полуширина проёма и толщина косяка (метры).
 const ARCH_HALF := 0.72
 const ARCH_JAMB := 0.28
@@ -37,10 +25,9 @@ var map_h := 0
 var grid: Array = []
 ## dist[y][x] — клеток до ближайшей стены (у стены 0).
 var dist: Array = []
-## ceil_h[y][x] — нижняя грань потолка над открытой клеткой: плоскость гребня
-## свода модуля стены.
+## ceil_h[y][x] — нижняя грань плоского потолка над открытой клеткой.
 var ceil_h: Array = []
-## wtop[y][x] — верх стенового блока: должен доставать до свода соседних залов.
+## wtop[y][x] — плоский верх стенового блока над соседними залами.
 var wtop: Array = []
 ## pier[y][x] — стеновой блок стоит отдельно и превращён в столб.
 var pier: Array = []
@@ -79,8 +66,6 @@ var kit: Dictionary = {}
 var kit_ok := false
 ## Материал заплаток земли с приглушённым альбедо (см. _dirt_material).
 var _mat_dirt: Material = null
-## Заливка пустот за кладкой: одна MultiMesh на все стеновые клетки.
-var gap_fill: MultiMeshInstance3D = null
 
 
 func _ready() -> void:
@@ -97,11 +82,9 @@ func build() -> void:
 	_shapes()
 	_build_floor()
 	_build_walls()
-	_build_wall_corners()
 	_build_arches()
 	_build_ceiling()
 	_build_piers()
-	_build_gap_fill()
 	_build_collision()
 	_build_props()
 	_dress_rooms()
@@ -380,8 +363,8 @@ func _in(tx: int, ty: int) -> bool:
 	return tx >= 0 and ty >= 0 and tx < map_w and ty < map_h
 
 
-## Поле расстояний от стен и всё, что из него следует: ступени свода,
-## высота стен, список отдельно стоящих опор.
+## Поле расстояний от стен и всё, что из него следует: высота стен,
+## список отдельно стоящих опор.
 func _shapes() -> void:
 	var far := map_w * map_h
 	dist = []
@@ -407,9 +390,7 @@ func _shapes() -> void:
 				continue
 			dist[n.y][n.x] = next_d
 			q.append(n)
-	# Потолок — плоскость гребня свода модуля стены. Ступенчатые подъёмы свода
-	# над залами убраны: китовый модуль несёт свой свод с гребнем на 4,844 м,
-	# и поднятый потолок отрывался от верха стены, открывая чёрный фон.
+	# Высота потолка едина: стены сохраняют прямой вертикальный профиль.
 	ceil_h = []
 	for y in map_h:
 		var row: Array = []
@@ -534,10 +515,7 @@ func _build_floor() -> void:
 
 
 ## Нужен ли блоку 2×2 пол: в нём есть проходимая клетка, клетка со столбом
-## или стена, обшитая модулями набора. У модуля стены нет собственного пола:
-## свод сходится с основанием кладки только на 1,6 м в глубину клетки, и без
-## плиты вдоль основания стены остаётся чёрная щель (в диагностических
-## кадрах — чёрная полоса у плинтуса).
+## или открытая грань стены, где плитка закрывает стык с полом.
 func _block_has_floor(bx: int, by: int) -> bool:
 	for dy in 2:
 		for dx in 2:
@@ -639,9 +617,8 @@ func _ceil_cell_height(tx: int, ty: int) -> float:
 	return total / float(count)
 
 
-## Высота свода в углу клеток. Ступени ceil_h сглаживаются по общей вершине:
-## вместо вертикальных «полок» получается пологий свод, и в потолке больше
-## нет тёмных прямоугольников — боковых граней блоков 2×2 м.
+## Высота потолка в углу клеток. Общие вершины не оставляют ступеней между
+## плитами и скрывают тёмные боковые грани блоков 2×2 м.
 func _ceil_corner_h(cx: int, cz: int) -> float:
 	var total := 0.0
 	var count := 0
@@ -670,8 +647,8 @@ func _build_ceiling() -> void:
 	var count := 0
 	for y in map_h:
 		for x in map_w:
-			# потолок кладётся и над клетками стен: свод модуля стены поднимается
-			# до плоскости потолка, и без заплаты над стеной в зал смотрит пустота
+			# Потолок закрывает и клетки стен, чтобы над кладкой не оставалось
+			# пустоты в сторону зала.
 			var ids: Array[int] = []
 			var corners: Array[Vector2i] = [
 				Vector2i(x, y), Vector2i(x + 1, y),
@@ -768,67 +745,13 @@ func _face_xform(pair: Array, d: Vector2i) -> Transform3D:
 	return Transform3D(_face_basis(d), mid / float(pair.size()))
 
 
-## Стены из кладки набора: на каждую обнажённую грань — модуль 4 м (две
-## клетки) или 2 м (одна). Лицо кладки ложится точно на плоскость грани
-## клетки по сетке m1.txt, поэтому щелей и разрывов между модулями нет.
+## Прямые стены строятся из блоков карты; модульные арки остаются только
+## в выделенных проёмах, а не формируют профиль всего периметра комнаты.
 func _build_walls() -> void:
-	if not kit_ok:
-		_build_walls_plain()
-		return
-	var four := 0
-	var two := 0
-	for d in SIDES:
-		var t := Vector2i(-d.y, d.x)
-		var used := {}
-		for y in map_h:
-			for x in map_w:
-				var c := Vector2i(x, y)
-				if used.has(c) or not _exposed(x, y, d):
-					continue
-				var pair: Array = [c]
-				var n := c + t
-				if _in(n.x, n.y) and not used.has(n) and _exposed(n.x, n.y, d):
-					pair.append(n)
-				var flip: bool = _cell_hash(x, y, 11) % 2 == 0
-				_kit_place("wall_4m" if pair.size() == 2 else "wall_2m",
-					_face_xform(pair, d), true, flip)
-				if pair.size() == 2:
-					four += 1
-				else:
-					two += 1
-				for cc in pair:
-					used[cc] = true
-	print("WALLS kit 4m=", four, " 2m=", two)
+	_build_walls_plain()
 
 
-## Закрывает видимые открытые торцы на поворотах стен небольшим каменным
-## замком. Срезы модулей остаются открытыми, чтобы не возвращать веерные клинья.
-func _build_wall_corners() -> void:
-	var count := 0
-	for y in map_h:
-		for x in map_w:
-			if not _in(x, y) or not grid[y][x] or pier[y][x]:
-				continue
-			var exposed: Array[Vector2i] = []
-			for d in SIDES:
-				if _exposed(x, y, d):
-					exposed.append(d)
-			for i in exposed.size():
-				for j in range(i + 1, exposed.size()):
-					var a: Vector2i = exposed[i]
-					var b: Vector2i = exposed[j]
-					if a.x * b.x + a.y * b.y != 0:
-						continue
-					var center := cell_center(x, y)
-					var corner := center \
-						+ Vector3(a.x + b.x, 0.0, a.y + b.y) * (T * 0.5 - FACE_Z)
-					_box(Vector3(CORNER_LOCK_SIZE, GAP_FILL_H, CORNER_LOCK_SIZE),
-						corner + Vector3(0, GAP_FILL_H * 0.5, 0), mat_wall)
-					count += 1
-	print("WALL corners=", count)
-
-
-## Аварийные стены, если набор не загрузился.
+## Прямоугольные стеновые блоки с процедурным PBR-материалом.
 func _build_walls_plain() -> void:
 	var cells: Array[Vector2i] = []
 	for y in map_h:
@@ -897,68 +820,9 @@ func _build_piers() -> void:
 	print("PIERS cylinders=", piers.size())
 
 
-## Мёртвое пространство ЗА кладкой. Модуль набора — односторонняя оболочка,
-## и за её лицевой кладкой (грань клетки + FACE_Z) до дальней грани клетки
-## остаётся пустота: в торце стены, в углу и у косяка она видна как чёрный
-## просвет. Заливаем этот слой коробками с материалом кирпича, отступив на
-## 2 см за лицевую поверхность, чтобы не перекрывать фактуру кладки. Нишу
-## перед кладкой не трогаем — по ней ходит игрок (см. _build_collision).
-## Высота 3,1 м (GAP_FILL_H): ниже пяты свода, поэтому коробка не протыкает свод.
-func _build_gap_fill() -> void:
-	if not kit_ok:
-		return
-	var boxes: Array = []
-	for y in map_h:
-		for x in map_w:
-			if not grid[y][x]:
-				continue
-			if not pier[y][x]:
-				var seen := false
-				for d0 in SIDES:
-					if _exposed(x, y, d0):
-						seen = true
-						break
-				if not seen:
-					continue
-			var mn := Vector3(float(x) * T, 0.0, float(y) * T)
-			var mx := Vector3(float(x + 1) * T, 0.0, float(y + 1) * T)
-			for d in SIDES:
-				if not _stone_face_open(x, y, d):
-					continue
-				if d.x < 0:
-					mn.x = maxf(mn.x, float(x) * T + FACE_Z + 0.02)
-				elif d.x > 0:
-					mx.x = minf(mx.x, float(x + 1) * T - FACE_Z - 0.02)
-				elif d.y < 0:
-					mn.z = maxf(mn.z, float(y) * T + FACE_Z + 0.02)
-				else:
-					mx.z = minf(mx.z, float(y + 1) * T - FACE_Z - 0.02)
-			if mx.x - mn.x < 0.05 or mx.z - mn.z < 0.05:
-				continue
-			boxes.append({"pos": Vector3((mn.x + mx.x) * 0.5, GAP_FILL_H * 0.5,
-				(mn.z + mx.z) * 0.5),
-				"size": Vector3(mx.x - mn.x, GAP_FILL_H, mx.z - mn.z)})
-	if boxes.is_empty():
-		return
-	# Единичный бокс: размер задаётся масштабом инстанса, иначе не собрать
-	# одним MultiMesh разные по толщине слои.
-	var unit := BoxMesh.new()
-	unit.size = Vector3.ONE
-	var mmi := _multimesh(unit, boxes.size(), mat_brick, false)
-	# Имя и ссылка нужны диагностике: заливка меняет видимую плоскость стены.
-	mmi.name = "gap_fill"
-	gap_fill = mmi
-	for i in boxes.size():
-		var b: Dictionary = boxes[i]
-		var size: Vector3 = b["size"]
-		mmi.multimesh.set_instance_transform(i, Transform3D(
-			Basis().scaled(size), b["pos"]))
-		mmi.multimesh.set_instance_color(i, Color.WHITE)
-	print("GAPS filled slabs=", boxes.size())
-
-
 func _build_collision() -> void:
 	var body := StaticBody3D.new()
+	body.name = "DungeonCollision"
 	body.collision_layer = 1
 	add_child(body)
 
@@ -969,25 +833,23 @@ func _build_collision() -> void:
 	floor_col.position = Vector3(map_w * T * 0.5, -0.3, map_h * T * 0.5)
 	body.add_child(floor_col)
 
-	# Стены получают коробки по видимой кладке; колонны — отдельные цилиндры.
-	# Своды и верхняя часть колонн остаются без коллизии.
-	for d in SIDES:
-		var t := Vector2i(-d.y, d.x)
-		var used := {}
-		for y in map_h:
-			for x in map_w:
-				var c := Vector2i(x, y)
-				if used.has(c) or not _wall_face_open(x, y, d):
-					continue
-				var run: Array[Vector2i] = [c]
-				used[c] = true
-				var next: Vector2i = c + t
-				while _in(next.x, next.y) and not used.has(next) \
-						and _wall_face_open(next.x, next.y, d):
-					run.append(next)
-					used[next] = true
-					next += t
-				_face_collision(body, run, d)
+	# Полноразмерные стеновые коллизии совпадают с прямоугольными блоками.
+	for y in map_h:
+		var x := 0
+		while x < map_w:
+			if not grid[y][x] or pier[y][x]:
+				x += 1
+				continue
+			var start := x
+			while x < map_w and grid[y][x] and not pier[y][x]:
+				x += 1
+			var run := x - start
+			_box_collision(body, Vector3(run * T, WALL_H + 0.1, T),
+				Vector3((start + run * 0.5) * T, (WALL_H + 0.1) * 0.5,
+					(y + 0.5) * T))
+	_build_boundary_collision()
+
+	# Отдельные цилиндрические опоры.
 	for p0 in piers:
 		var p: Dictionary = p0
 		var radius: float = minf(float(p["rx"]), float(p["rz"])) * 0.62
@@ -1028,34 +890,27 @@ func _build_collision() -> void:
 			Vector3(center.x, (WALL_H + ARCH_TOP) * 0.5, center.z))
 
 
-## Грань клетки-камня, обращённая в проходимую клетку.
-func _stone_face_open(x: int, y: int, d: Vector2i) -> bool:
-	return _in(x, y) and grid[y][x] and _open_in(x, y, d)
+## Защитный физический контур не даёт выйти за пределы пола даже через стык.
+func _build_boundary_collision() -> void:
+	var boundary := StaticBody3D.new()
+	boundary.name = "DungeonBoundaryCollision"
+	boundary.collision_layer = 1
+	boundary.collision_mask = 0
+	boundary.add_to_group("dungeon_boundary")
+	add_child(boundary)
 
-
-## Колонки получают собственную цилиндрическую коллизию ниже уровня свода.
-func _wall_face_open(x: int, y: int, d: Vector2i) -> bool:
-	return _stone_face_open(x, y, d) and not pier[y][x]
-
-
-## Коробка коллизии на прогон обнажённых граней: передняя плоскость — по
-## видимой кладке модуля (грань клетки + FACE_Z), низ на полу, верх на COL_H.
-## Свода в коллизии нет: он висит на 3,8–4,84 м, игрок туда не достаёт.
-func _face_collision(body: StaticBody3D, run: Array[Vector2i], d: Vector2i) -> void:
-	var t := Vector2i(-d.y, d.x)
-	var pos := Vector3.ZERO
-	for c in run:
-		pos += cell_center(c.x, c.y)
-	pos /= float(run.size())
-	# d смотрит из клетки-камня в прохожую клетку, а лицевая кладка модуля — на
-	# FACE_Z от грани в глубь клетки. Коробка садится на кладку со стороны нишы:
-	# передняя плоскость — ровно на кладке, задняя — в глубине клетки.
-	pos -= Vector3(d.x, 0.0, d.y) * (FACE_Z + COL_THICK * 0.5 - T * 0.5)
-	pos.y = COL_H * 0.5
-	var length: float = float(run.size()) * T
-	_box_collision(body, Vector3(
-		length if t.x != 0 else COL_THICK, COL_H,
-		length if t.y != 0 else COL_THICK), pos)
+	var thickness := 0.5
+	var height := WALL_H + 1.0
+	var width := float(map_w) * T
+	var depth := float(map_h) * T
+	_box_collision(boundary, Vector3(thickness, height, depth + thickness * 2.0),
+		Vector3(-thickness * 0.5, height * 0.5, depth * 0.5))
+	_box_collision(boundary, Vector3(thickness, height, depth + thickness * 2.0),
+		Vector3(width + thickness * 0.5, height * 0.5, depth * 0.5))
+	_box_collision(boundary, Vector3(width, height, thickness),
+		Vector3(width * 0.5, height * 0.5, -thickness * 0.5))
+	_box_collision(boundary, Vector3(width, height, thickness),
+		Vector3(width * 0.5, height * 0.5, depth + thickness * 0.5))
 
 
 func _box_collision(body: StaticBody3D, size: Vector3, pos: Vector3) -> void:
@@ -1524,7 +1379,7 @@ func _nearest_wall_anchor(pos: Vector3, max_r: int = 7) -> Dictionary:
 						continue
 					var wall_cell := Vector2i(wx, wy)
 					var face := _face_xform([wall_cell], Vector2i(-d.x, -d.y))
-					var p := face.origin + face.basis.z * FACE_Z
+					var p := face.origin
 					var dist := p.distance_squared_to(pos)
 					if dist < best_d:
 						best_d = dist
@@ -2047,7 +1902,7 @@ func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
 	var face_dir := Vector2i(-d.x, -d.y)
 	var xf := _face_xform([wall_cell], face_dir)
 	var anchor := {
-		"pos": xf.origin + xf.basis.z * FACE_Z + Vector3(0.0, 1.72, 0.0),
+		"pos": xf.origin + Vector3(0.0, 1.72, 0.0),
 		"normal": -xf.basis.z,
 	}
 	var root := _wall_root(anchor)
@@ -2172,7 +2027,8 @@ func _dress_rooms() -> void:
 			else:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
 
-## KillZone
+
+## KillZone: страховка от выхода за нижнюю границу уровня.
 func _add_kill_zone() -> void:
 	var kill := Area3D.new()
 	kill.name = "KillZone"
