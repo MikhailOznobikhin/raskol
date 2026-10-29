@@ -77,10 +77,11 @@ func _add_photo_spots() -> void:
 	for d in defs:
 		var m := Marker3D.new()
 		m.name = d["name"]
+		m.add_to_group("photo_spot")
+		# Сначала в дерево: global_position и look_at работают только у узла в сцене.
+		spots.add_child(m)
 		m.global_position = d["pos"]
 		m.look_at(d["look_at"], Vector3.UP)
-		m.add_to_group("photo_spot")
-		spots.add_child(m)
 
 
 func _build_hud() -> void:
