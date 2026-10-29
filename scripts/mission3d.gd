@@ -50,11 +50,37 @@ func _ready() -> void:
 	_spawn_enemies()
 	_spawn_interactables()
 	_spawn_lore_pickups()
+	_add_photo_spots()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if load_on_start and SaveSystem.has_save():
 		_restore_save()
 	else:
 		_intro()
+
+
+func _add_photo_spots() -> void:
+	var spots := Node3D.new()
+	spots.name = "PhotoSpots"
+	add_child(spots)
+	var defs := [
+		{"name": "spot_01_torch_puddle", "pos": Vector3(10.5, 1.6, 60.0), "look_at": Vector3(10.5, 1.2, 61.5)},
+		{"name": "spot_02_corridor_junction", "pos": Vector3(40.0, 1.6, 49.0), "look_at": Vector3(50.0, 1.2, 49.0)},
+		{"name": "spot_03_wall_curve_ceiling", "pos": Vector3(90.0, 1.6, 35.0), "look_at": Vector3(95.0, 1.2, 35.0)},
+		{"name": "spot_04_dark_tunnel_arch", "pos": Vector3(15.0, 1.6, 40.0), "look_at": Vector3(20.0, 1.2, 40.0)},
+		{"name": "spot_05_floor_closeup", "pos": Vector3(13.0, 1.2, 56.0), "look_at": Vector3(13.0, 0.5, 58.0)},
+		{"name": "spot_06_doorway", "pos": Vector3(12.0, 1.6, 52.0), "look_at": Vector3(13.0, 1.2, 54.0)},
+		{"name": "spot_07_largest_room", "pos": Vector3(80.0, 2.0, 50.0), "look_at": Vector3(90.0, 1.2, 45.0)},
+		{"name": "spot_08_escape_view", "pos": Vector3(55.0, 1.6, 10.0), "look_at": Vector3(59.0, 1.2, 5.0)},
+		{"name": "spot_09_gameplay_typical", "pos": Vector3(33.0, 1.6, 46.0), "look_at": Vector3(33.0, 1.2, 49.0)},
+		{"name": "spot_10_cistern_area", "pos": Vector3(130.0, 1.6, 38.0), "look_at": Vector3(125.0, 1.2, 38.0)},
+	]
+	for d in defs:
+		var m := Marker3D.new()
+		m.name = d["name"]
+		m.global_position = d["pos"]
+		m.look_at(d["look_at"], Vector3.UP)
+		m.add_to_group("photo_spot")
+		spots.add_child(m)
 
 
 func _build_hud() -> void:

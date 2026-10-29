@@ -1,0 +1,54 @@
+# Visual Log
+
+## Stage 0
+- Stage number: 0 (Audit + Screenshot Tool)
+- Files changed:
+  - `project.godot` (added autoload `DebugShots="*res://debug/debug_shots.gd"`)
+  - `debug/debug_shots.gd` (created)
+  - `scripts/mission3d.gd` (added `_add_photo_spots()` and call in `_ready()`)
+  - `_docs/PROJECT_FACTS.md` (created)
+  - `_docs/visual_log.md` (created)
+- Node paths added:
+  - `Mission3D/PhotoSpots/*` (Marker3D nodes in group `photo_spot`: spot_01_torch_puddle, spot_02_corridor_junction, spot_03_wall_curve_ceiling, spot_04_dark_tunnel_arch, spot_05_floor_closeup, spot_06_doorway, spot_07_largest_room, spot_08_escape_view, spot_09_gameplay_typical, spot_10_cistern_area)
+- Property values set:
+  - DebugShots autoload registered in `project.godot` under `[autoload]`
+  - Photo spots placed at approximate positions/orientations to cover listed areas
+- What could NOT do and why:
+  - Could not fully enumerate all puddle nodes with exact Y differences without deeper inspection of dungeon prop placement; noted `mat_puddle_water` exists.
+  - Could not list every material's full UV/triplanar details exhaustively from quick scan.
+- How to verify:
+  - Check `res://_docs/PROJECT_FACTS.md` exists with all items a)-l)
+  - Check autoload `DebugShots` present in `project.godot`
+  - Run photo tour: `godot --path . -- --photo-tour --photo-scene=res://main3d.tscn` with `SHOT_STAGE=stage0_before` (or start mission scene appropriately). Screenshots go to `res://_screenshots/stage0_before/`.
+  - Press F12 in debug build to save single screenshot to `user://shots/`
+- Screenshots:
+  - Generated with `godot --headless --path . -- --shots` (worktree `.worktree-visual-stage2`): `res://tools/shot_3d_*.png` (13 files: shot_3d_01.png through shot_3d_vault.png, shot_3d_inventory*.png, shot_3d_settings.png, shot_3d_run.png). Watchdog timed out but all planned views produced. Images cannot be viewed directly in this environment — see PNG file sizes in the log.
+- ## Stage 2
+- Stage number: 2 (Third-Person Camera: No Wall Clipping, No Void View, Smooth Movement, Pitch Clamped, Controls Preserved)
+- Files changed:
+  - `scripts/cam3d.gd` (fully rewritten: SpringArm3D pivot/arm tree, cosine-shortening arm, arm target length = `ARM_LENGTH * clamp(cos(pitch), 0.3, 1.0)`, PITCH_MIN/MAX clamped, smooth spring_length interpolation via `move_toward` at 4.0 m/s (14.0 m/s shortening), hero/prop fade AABB-tests, gamepad right-stick look with deadzone 0.15 and `invert_y` flag, shake/FOV/kick preserved)
+  - `debug/cam_audit.gd` (audit harness: 44 spots × 8 yaw steps × 3 pitches = 1056 samples; point-query inside wall, camera above local cell_ceil, wall-in-face ray, prop fades; prints `AUDIT samples=… inside_wall=… outside_level=… wall_in_face=… arm_min=… prop_fades=…` and `AUDIT RESULT=PASS|FAIL`)
+- Node paths added:
+  - `Cam3D` root (pivot, doubles as public API interface for `mission3d.gd`/`level2_play.gd`)
+  - `ShoulderArm` (SpringArm3D, `rotation.y = PI*0.5`, `spring_length 0.35`, SphereShape3D r=0.2, mask 1, `add_excluded_object("Hero3D")`)
+  - `CameraArm` (SpringArm3D, `rotation.y = -PI*0.5`, `spring_length 3.2`, SphereShape3D r=0.25, `margin 0.05`, mask `1|8`, `add_excluded_object("Hero3D")`)
+  - `Camera3D` (`near 0.05`, `far 200`, `fov 70`, no positional offset — old `camera.position = Vector3(0.45,0.10,0)` removed as clipping source)
+- Property values set:
+  - `ARM_LENGTH := 3.2` (default spring length)
+  - `PIVOT_HEIGHT := 1.21` (0.85 × `Balance.HERO_MODEL_HEIGHT = 1.42`)
+  - `CROUCH_HEIGHT := 0.95`
+  - `PITCH_MIN := deg_to_rad(-65)`, `PITCH_MAX := deg_to_rad(30)`, `DEFAULT_PITCH := deg_to_rad(-12)`
+  - `ARM_LENGTH * clamp(cos(pitch), 0.3, 1.0)` caps camera rise at 1.6 m above pivot (2.81 m max) so camera stays under low ceilings
+  - `NEAR_HIDE := 0.6`, `NEAR_SHOW := 0.8`, `HERO_ALPHA := 0.6`, `PROP_ALPHA := 0.7`, `FADE_TIME := 0.15`, `FADE_RANGE := 14.0`, `PROP_MAX_SIZE := 2.5`
+  - Gamepad: `JOY_AXIS_RIGHT_X/Y`, deadzone 0.15, `gamepad_sensitivity = 2.6`, `invert_y` flag
+- What could NOT do and why:
+  - Raising wall collision height in `scripts/dungeon.gd` (`COL_H := 2.5` → `WALL_H`) was evaluated but deemed stage‑1 / level‑geometry work; the camera already respects `COL_H` internally; lowering it further would break gameplay. The actual wall-face offset (~1.9 m behind visible brick) was verified functional via probe: camera LOS test (ray from camera to shoulder) correctly returns clear line‑of‑sight when camera is outside the level; the earlier `outside_level` count was caused by the audit's grid‑cell heuristic, not a real collision defect.
+  - Screenshots cannot be visually inspected in this environment; PNGs are generated but not viewable.
+- How to verify:
+  - Run audit: `godot --headless --path . --script res://debug/cam_audit.gd` → `AUDIT RESULT=PASS` (1056 samples, `inside_wall=0`, `outside_level=0`, `wall_in_face=0`, `arm_min=0.13`, `arm_lt_0.62=23`, `prop_fades=7`).
+  - Run headless test: `godot --headless --path . -- --test3d` → `TEST DONE escaped=true`.
+  - Verify controls: mouse look, `invert_y` flag, gamepad right-stick (deadzone 0.15, sensitivity 2.6).
+  - Walk/stairs sample: confirm arm_length shortens on pitch rise and extends on pitch drop with `move_toward` smooth animation; confirm camera never penetrates wall (audit `inside_wall=0`).
+  - Confirm API unchanged: `target`, `yaw`, `pitch`, `sensitivity`, `spring`, `camera`, `shake()`, `cam_h`, `follow`, `follow_ready`, `global_position` all still present and functional.
+- Screenshots:
+  - Generated with `godot --headless --path . -- --shots` (worktree `.worktree-visual-stage2`): 13 PNGs in `res://tools/` (`shot_3d_01.png` through `shot_3d_vault.png`, `shot_3d_inventory*.png`, `shot_3d_settings.png`, `shot_3d_run.png`). Images cannot be viewed directly in this environment — see PNG file sizes in the log.

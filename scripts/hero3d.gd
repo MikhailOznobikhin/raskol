@@ -86,6 +86,10 @@ var slash_step := -99
 var slash_node: AnimationNodeAnimation
 var slash_len := 0.72
 
+var last_safe_position: Vector3 = Vector3.ZERO
+var _safe_timer := 0.0
+var lowest_floor_y := 0.0
+
 signal died
 
 
@@ -584,6 +588,7 @@ func _physics_process(delta: float) -> void:
 	distract_cd = max(0.0, distract_cd - delta)
 	spike_cd = max(0.0, spike_cd - delta)
 	nova_cd = max(0.0, nova_cd - delta)
+	_update_safe_position(delta)
 	if dead:
 		velocity.x = move_toward(velocity.x, 0, 20 * delta)
 		velocity.z = move_toward(velocity.z, 0, 20 * delta)
@@ -1255,3 +1260,24 @@ func _bark_damage() -> void:
 	var mission := get_tree().current_scene
 	if mission != null and mission.get("hud") != null:
 		mission.hud.flash_damage()
+
+
+func respawn_to_safe() -> void:
+	if last_safe_position == Vector3.ZERO:
+		return
+	global_position = last_safe_position + Vector3.UP * 0.1
+	velocity = Vector3.ZERO
+	if has_method("reset_physics_interpolation"):
+		call("reset_physics_interpolation")
+
+
+## Запоминает последнюю позицию, где герой стоял на полу, и возвращает его туда,
+## если он провалился ниже уровня пола (страховка от дыр в геометрии).
+func _update_safe_position(delta: float) -> void:
+	_safe_timer += delta
+	if _safe_timer >= 0.5:
+		_safe_timer = 0.0
+		if is_on_floor():
+			last_safe_position = global_position
+	if global_position.y < (lowest_floor_y - 15.0) and last_safe_position != Vector3.ZERO:
+		respawn_to_safe()

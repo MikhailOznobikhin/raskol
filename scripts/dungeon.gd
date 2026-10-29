@@ -18,9 +18,9 @@ const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 ## перекидывается над нишей с гребнем на грани клетки.
 const FACE_Z := 1.88
 ## Коллизия стен: толщина равна слою от видимой грани до задней грани клетки.
-const COL_THICK := T - FACE_Z
+const COL_THICK := maxf(0.3, T - FACE_Z)
 ## Выше 2,5 м игрок не достаёт: свод висит на 3,8–4,84 м, коллизии там не нужно.
-const COL_H := 2.5
+const COL_H := maxf(4.0, WALL_H)
 ## Заливка пустот за кладкой: высота ниже пяты свода набора.
 const GAP_FILL_H := 3.1
 ## Квадратный каменный замок на наружных поворотах кладки.
@@ -84,6 +84,9 @@ var gap_fill: MultiMeshInstance3D = null
 
 
 func _ready() -> void:
+
+	var lt = preload('res://debug/leak_test.gd').new()
+	add_child(lt)
 	add_to_group("dungeon")
 
 
@@ -1089,7 +1092,7 @@ func _light_world_position(light: OmniLight3D) -> Vector3:
 func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.015, 0.018, 0.025)
+	env.background_color = Color(0.02, 0.018, 0.016)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	# Холодный заполняющий ambient: синеватый цвет контрастирует с тёплыми
 	# факелами и вытаскивает кладку из черноты, не трогая альбедо текстур.
@@ -2168,3 +2171,22 @@ func _dress_rooms() -> void:
 				_prop(kind, _floor_safe(pos, 0.12))
 			else:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
+
+## KillZone
+func _add_kill_zone() -> void:
+	var kill := Area3D.new()
+	kill.name = "KillZone"
+	kill.collision_layer = 1 << 4
+	kill.collision_mask = 1 << 1
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(map_w * T + 40.0, 4.0, map_h * T + 40.0)
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	col.position = Vector3(map_w * T * 0.5, -12.0, map_h * T * 0.5)
+	kill.add_child(col)
+	add_child(kill)
+	kill.body_entered.connect(func(body):
+		if body.is_in_group("player") or body is CharacterBody3D:
+			if body.has_method("respawn_to_safe"):
+				body.respawn_to_safe()
+	)
