@@ -1,0 +1,16 @@
+func _face_collision(body: StaticBody3D, run: Array[Vector2i], d: Vector2i) -> void:
+	var t := Vector2i(-d.y, d.x)
+	var pos := Vector3.ZERO
+	for c in run:
+		pos += cell_center(c.x, c.y)
+	pos /= float(run.size())
+	# d смотрит из клетки-камня в прохожую клетку, а лицевая кладка модуля — на
+	# FACE_Z от грани в глубь клетки. Коробка садится на кладку со стороны нишы:
+	# передняя плоскость — ровно на кладке, задняя — в глубине клетки.
+	pos -= Vector3(d.x, 0.0, d.y) * (FACE_Z + COL_THICK * 0.5 - T * 0.5)
+	pos.y = COL_H * 0.5
+	var length: float = float(run.size()) * T
+	_box_collision(body, Vector3(
+		length if t.x != 0 else COL_THICK, COL_H,
+		length if t.y != 0 else COL_THICK), pos)
+

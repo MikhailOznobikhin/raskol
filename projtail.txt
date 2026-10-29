@@ -1,0 +1,12 @@
+﻿texture={
+"compress/mode": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false,
+"process/fix_alpha_border": false,
+"roughness/mode": 0
+}
+
+[layer_names]
+
+3d_physics/layer_1=" world_static\n3d_physics/layer_2=\player\n3d_physics/layer_3=
+pc\n3d_physics/layer_4=\props_dynamic\n3d_physics/layer_5=	riggers\n
