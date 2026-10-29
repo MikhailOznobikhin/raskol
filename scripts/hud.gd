@@ -60,6 +60,39 @@ const COLOR_GOLD := Color(0.68, 0.53, 0.29)
 const COLOR_HEALTH := Color(0.62, 0.19, 0.20)
 const COLOR_MAGIC := Color(0.33, 0.47, 0.58)
 const COLOR_CRAVING := Color(0.70, 0.39, 0.20)
+## Фон панелей HUD полупрозрачный: в исследовании сквозь них видна сцена.
+const PANEL_ALPHA := 0.62
+
+## Блоки HUD: каждый — Control-группа, чтобы гасить и масштабировать его целиком.
+var objective_group: Control
+var stats_group: Control
+var stats_bg: Panel
+var trust_group: Control
+var hero_group: Control
+var _bar_values: Array[Label] = []
+
+## Цель: крупно после смены, потом компактно (меньше и прозрачнее).
+const OBJECTIVE_POS := Vector2(10, 10)
+const OBJECTIVE_H := 32.0
+const OBJECTIVE_COMPACT_SCALE := 0.72
+const OBJECTIVE_COMPACT_ALPHA := 0.55
+const OBJECTIVE_NEW_HOLD := 5.0
+const OBJECTIVE_REMIND_HOLD := 3.0
+var _objective_timer := 0.0
+var _objective_large := false
+var _objective_tween: Tween
+
+## Статы и доверие гаснут, пока ничего не меняется.
+const IDLE_ALPHA := 0.3
+const IDLE_START_HOLD := 8.0
+const IDLE_CHANGE_HOLD := 4.0
+## Числа у полосок героя после изменения значения.
+const BAR_VALUE_HOLD := 2.5
+var _fade_timer := {}
+var _fade_tween := {}
+var _bar_value_timer := 0.0
+var _bar_value_tween: Tween
+var _last := {}
 
 
 func _ready() -> void:
@@ -70,26 +103,44 @@ func _ready() -> void:
 	GameState.skills_changed.connect(_refresh_progression)
 	GameState.xp_gained.connect(_on_xp_gained)
 	GameState.level_up.connect(_on_level_up)
+	resumed.connect(func(): _objective_expand(OBJECTIVE_REMIND_HOLD))
 	_refresh_stats()
 	_refresh_progression()
+	# set_counters зовут только при подборе: стартовое 0/0 уже на экране
+	_last["counters"] = [0, 0]
+	_fade_timer[stats_group] = IDLE_START_HOLD
+	_fade_timer[trust_group] = IDLE_START_HOLD
 
 
-func _panel(pos: Vector2, size: Vector2) -> Panel:
+## Группа для блока HUD: позиция задаёт угол, дети — в её координатах.
+func _group(pos: Vector2) -> Control:
+	var g := Control.new()
+	g.position = pos
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(g)
+	return g
+
+
+func _panel(pos: Vector2, size: Vector2, parent: Node = null) -> Panel:
 	var p := Panel.new()
 	p.position = pos
 	p.size = size
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxFlat.new()
-	style.bg_color = COLOR_INK
+	style.bg_color = Color(COLOR_INK, PANEL_ALPHA)
 	style.border_color = Color(COLOR_GOLD, 0.8)
-	style.border_width_left = 1
-	style.content_margin_left = 8.0
+	style.border_width_left = 2
+	# золотая кромка растворяется в фоне — мягкий переход вместо резкой линии
+	style.border_blend = true
+	style.set_corner_radius_all(2)
+	style.content_margin_left = 6.0
 	p.add_theme_stylebox_override("panel", style)
-	add_child(p)
+	(parent if parent != null else self).add_child(p)
 	return p
 
 
-func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Color(0.85, 0.82, 0.74)) -> Label:
+func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Color(0.85, 0.82, 0.74),
+		parent: Node = null) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.position = pos
@@ -100,7 +151,7 @@ func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Col
 	l.add_theme_constant_override("shadow_offset_x", 1)
 	l.add_theme_constant_override("shadow_offset_y", 1)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(l)
+	(parent if parent != null else self).add_child(l)
 	return l
 
 
@@ -108,19 +159,24 @@ func _label(text: String, pos: Vector2, size: Vector2, fsize := 11, color := Col
 var _icon_offset := {}
 
 
-func _bar(pos: Vector2, color: Color, icon_path: String) -> ColorRect:
+func _bar(pos: Vector2, color: Color, icon_path: String, parent: Node) -> ColorRect:
 	var bg := ColorRect.new()
 	bg.color = Color(0.10, 0.105, 0.11, 0.9)
 	bg.position = pos
 	bg.size = Vector2(BAR_W, BAR_H)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	parent.add_child(bg)
 	var fill := ColorRect.new()
 	fill.color = color
 	fill.position = pos + Vector2(1, 0)
 	fill.size = Vector2(BAR_W - 2, BAR_H)
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(fill)
+	parent.add_child(fill)
+	# число справа от полоски: видно при изменении значения и под курсором
+	var value := _label("", pos + Vector2(BAR_W + 2, (BAR_H - 10) * 0.5), Vector2(16, 10), 7,
+		COLOR_PARCHMENT, parent)
+	value.modulate.a = 0.0
+	_bar_values.append(value)
 	var icon := TextureRect.new()
 	icon.texture = Art.tex(icon_path)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -131,7 +187,7 @@ func _bar(pos: Vector2, color: Color, icon_path: String) -> ColorRect:
 	# иконка слева от полоски и ровно по её середине
 	icon.position = pos + Vector2(-ICON_SLOT - ICON_GAP, (BAR_H - ICON_SLOT) * 0.5)
 	icon.position -= _icon_content_offset(icon_path)
-	add_child(icon)
+	parent.add_child(icon)
 	return fill
 
 
@@ -160,54 +216,60 @@ func _icon_content_offset(icon_path: String) -> Vector2:
 
 func _build() -> void:
 	# --- задача слева сверху ---
-	objective_panel = _panel(Vector2(12, 12), Vector2(260, 38))
-	objective_header = _label("ЦЕЛЬ", Vector2(24, 15), Vector2(60, 10), 7, COLOR_GOLD)
-	objective_label = _label("", Vector2(24, 27), Vector2(238, 18), 10, COLOR_PARCHMENT)
+	objective_group = _group(OBJECTIVE_POS)
+	objective_panel = _panel(Vector2.ZERO, Vector2(260, OBJECTIVE_H), objective_group)
+	objective_header = _label("ЦЕЛЬ", Vector2(8, 2), Vector2(60, 10), 7, COLOR_GOLD, objective_group)
+	objective_label = _label("", Vector2(8, 12), Vector2(244, 18), 10, COLOR_PARCHMENT, objective_group)
 	objective_panel.visible = false
 	objective_header.visible = false
-	_panel(Vector2(12, 54), Vector2(228, 54))
-	counters_label = _label("Записки 0/5  ·  Предметы 0/6", Vector2(20, 59), Vector2(212, 14), 8,
-		COLOR_MUTED)
+
+	stats_group = _group(Vector2(OBJECTIVE_POS.x, OBJECTIVE_POS.y))
+	stats_bg = _panel(Vector2.ZERO, Vector2(184, 42), stats_group)
+	counters_label = _label("Записки 0/5  ·  Предметы 0/6", Vector2(7, 2), Vector2(172, 13), 8,
+		COLOR_MUTED, stats_group)
 
 	# --- уровень и полоса опыта ---
-	level_label = _label("УР. 1", Vector2(20, 78), Vector2(54, 14), 9, COLOR_PARCHMENT)
+	level_label = _label("УР. 1", Vector2(7, 15), Vector2(42, 13), 9, COLOR_PARCHMENT, stats_group)
 	var xbg := ColorRect.new()
 	xbg.color = Color(0.10, 0.105, 0.11, 0.9)
-	xbg.position = Vector2(70, 81)
+	xbg.position = Vector2(50, 20)
 	xbg.size = Vector2(112, 3)
 	xbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(xbg)
+	stats_group.add_child(xbg)
 	xp_fill = ColorRect.new()
 	xp_fill.color = COLOR_GOLD
-	xp_fill.position = Vector2(70, 81)
+	xp_fill.position = Vector2(50, 20)
 	xp_fill.size = Vector2(0, 3)
 	xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(xp_fill)
-	points_label = _label("", Vector2(20, 94), Vector2(212, 14), 8, COLOR_GOLD)
+	stats_group.add_child(xp_fill)
+	points_label = _label("", Vector2(7, 28), Vector2(172, 13), 8, COLOR_GOLD, stats_group)
 
 	# --- доверие справа сверху ---
-	_panel(Vector2(466, 8), Vector2(166, 34))
-	_label("ДОВЕРИЕ", Vector2(474, 13), Vector2(94, 12), 8, COLOR_MUTED)
+	trust_group = _group(Vector2(470, 10))
+	_panel(Vector2.ZERO, Vector2(160, 26), trust_group)
+	_label("ДОВЕРИЕ", Vector2(7, 2), Vector2(94, 12), 8, COLOR_MUTED, trust_group)
 	var tb := ColorRect.new()
 	tb.color = Color(0.10, 0.105, 0.11, 0.9)
-	tb.position = Vector2(474, 30)
+	tb.position = Vector2(7, 18)
 	tb.size = Vector2(122, 3)
 	tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(tb)
+	trust_group.add_child(tb)
 	trust_fill = ColorRect.new()
 	trust_fill.color = COLOR_MAGIC
-	trust_fill.position = Vector2(474, 30)
+	trust_fill.position = Vector2(7, 18)
 	trust_fill.size = Vector2(61, 3)
 	trust_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(trust_fill)
-	trust_label = _label("-40", Vector2(602, 25), Vector2(30, 12), 8, COLOR_PARCHMENT)
+	trust_group.add_child(trust_fill)
+	trust_label = _label("-40", Vector2(133, 13), Vector2(26, 12), 8, COLOR_PARCHMENT, trust_group)
 
 	# --- панель героя слева снизу ---
-	_panel(Vector2(8, 296), Vector2(172, 58))
-	_label("ТОРВИН ГРИМ", Vector2(16, 300), Vector2(140, 14), 9, COLOR_PARCHMENT)
-	hp_fill = _bar(Vector2(30, 318), COLOR_HEALTH, "res://assets/ui/icon_heart.png")
-	magic_fill = _bar(Vector2(30, 330), COLOR_MAGIC, "res://assets/ui/icon_spike.png")
-	craving_fill = _bar(Vector2(30, 342), COLOR_CRAVING, "res://assets/ui/icon_eye.png")
+	hero_group = _group(Vector2(8, 308))
+	_panel(Vector2.ZERO, Vector2(172, 46), hero_group)
+	_label("ТОРВИН ГРИМ", Vector2(8, 1), Vector2(140, 14), 9, COLOR_PARCHMENT, hero_group)
+	hp_fill = _bar(Vector2(22, 16), COLOR_HEALTH, "res://assets/ui/icon_heart.png", hero_group)
+	magic_fill = _bar(Vector2(22, 26), COLOR_MAGIC, "res://assets/ui/icon_spike.png", hero_group)
+	craving_fill = _bar(Vector2(22, 36), COLOR_CRAVING, "res://assets/ui/icon_eye.png", hero_group)
+	_layout_stats()
 
 	# --- подсказка взаимодействия ---
 	prompt_label = _label("", Vector2(0, 258), Vector2(640, 18), 10, COLOR_PARCHMENT)
@@ -463,6 +525,116 @@ func _refresh_stats() -> void:
 	var t := (GameState.trust + 100.0) / 200.0
 	trust_fill.size.x = int(120 * t)
 	trust_label.text = ("+" if GameState.trust > 0 else "") + str(GameState.trust)
+	var bars := [roundi(GameState.health), roundi(GameState.magic), roundi(GameState.craving)]
+	for i in bars.size():
+		_bar_values[i].text = str(bars[i])
+	if _changed("bars", bars):
+		_show_bar_values()
+	if _changed("trust", GameState.trust):
+		_signal_change(trust_group)
+
+
+## Запоминает значение и говорит, изменилось ли оно. Первое значение — не изменение:
+## стартовое заполнение HUD не должно мигать.
+func _changed(key: String, value) -> bool:
+	var had := _last.has(key)
+	var differs: bool = had and _last[key] != value
+	_last[key] = value
+	return differs
+
+
+## Изменение значения: блок вспыхивает золотом и держится ярким, потом гаснет.
+func _signal_change(group: Control) -> void:
+	_fade_timer[group] = maxf(_fade_timer.get(group, 0.0), IDLE_CHANGE_HOLD)
+	_kill_tween(_fade_tween.get(group))
+	group.modulate = Color(1.45, 1.25, 0.9, 1.0)
+	var tw := create_tween()
+	tw.tween_property(group, "modulate", Color.WHITE, 0.7)
+	_fade_tween[group] = tw
+
+
+func _kill_tween(tw) -> void:
+	if tw is Tween and tw.is_valid():
+		tw.kill()
+
+
+func _process_fade(delta: float) -> void:
+	for group in _fade_timer:
+		var left: float = _fade_timer[group]
+		if left <= 0.0:
+			continue
+		left -= delta
+		_fade_timer[group] = left
+		if left <= 0.0:
+			_kill_tween(_fade_tween.get(group))
+			var tw := create_tween()
+			tw.tween_property(group, "modulate:a", IDLE_ALPHA, 1.2)
+			_fade_tween[group] = tw
+	# числа у полосок: под курсором держим, после изменения — несколько секунд
+	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE \
+			and Rect2(Vector2.ZERO, Vector2(172, 46)).has_point(hero_group.get_local_mouse_position()):
+		if _bar_value_timer <= 0.0:
+			_show_bar_values(0.3)
+		_bar_value_timer = maxf(_bar_value_timer, 0.3)
+	if _bar_value_timer > 0.0:
+		_bar_value_timer -= delta
+		if _bar_value_timer <= 0.0:
+			_kill_tween(_bar_value_tween)
+			_bar_value_tween = create_tween().set_parallel()
+			for v in _bar_values:
+				_bar_value_tween.tween_property(v, "modulate:a", 0.0, 0.6)
+	if _objective_timer > 0.0:
+		_objective_timer -= delta
+		if _objective_timer <= 0.0:
+			_objective_large = false
+			_tween_objective(false, false)
+
+
+func _show_bar_values(hold := BAR_VALUE_HOLD) -> void:
+	_bar_value_timer = maxf(_bar_value_timer, hold)
+	_kill_tween(_bar_value_tween)
+	_bar_value_tween = create_tween().set_parallel()
+	for v in _bar_values:
+		_bar_value_tween.tween_property(v, "modulate:a", 1.0, 0.15)
+
+
+## Цель снова крупно на hold секунд; новая цель ещё и вспыхивает.
+func _objective_expand(hold: float, flash := false) -> void:
+	if objective_panel == null or not objective_panel.visible:
+		return
+	_objective_timer = hold if flash else maxf(_objective_timer, hold)
+	if _objective_large and not flash:
+		return
+	_objective_large = true
+	_tween_objective(true, flash)
+
+
+func _tween_objective(large: bool, flash: bool) -> void:
+	_kill_tween(_objective_tween)
+	var k := 1.0 if large else OBJECTIVE_COMPACT_SCALE
+	_objective_tween = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_objective_tween.tween_property(objective_group, "scale", Vector2(k, k), 0.35)
+	if flash:
+		objective_group.modulate = Color(1.45, 1.25, 0.9, 1.0)
+		_objective_tween.tween_property(objective_group, "modulate", Color.WHITE, 0.9)
+	else:
+		var a := 1.0 if large else OBJECTIVE_COMPACT_ALPHA
+		_objective_tween.tween_property(objective_group, "modulate", Color(1, 1, 1, a), 0.5)
+	_objective_tween.tween_property(stats_group, "position:y", _stats_y(k), 0.35)
+
+
+## Статы стоят сразу под целью: под крупной, под компактной или на её месте.
+func _stats_y(objective_scale: float) -> float:
+	if objective_panel == null or not objective_panel.visible:
+		return OBJECTIVE_POS.y
+	return OBJECTIVE_POS.y + OBJECTIVE_H * objective_scale + 4.0
+
+
+## Без строки очков развития панель статов ниже на одну строку.
+func _layout_stats() -> void:
+	stats_bg.size.y = 42.0 if points_label.text != "" else 30.0
+	if _objective_tween == null or not _objective_tween.is_running():
+		stats_group.position.y = _stats_y(objective_group.scale.y)
 
 
 var _hud_vis := {}
@@ -484,6 +656,11 @@ func _refresh_progression() -> void:
 			GameState.stat_points, GameState.skill_points]
 	else:
 		points_label.text = ""
+	_layout_stats()
+	if _changed("progression", [GameState.level, GameState.xp, points_label.text]):
+		_signal_change(stats_group)
+
+
 ## Всплывающая надпись: «ОПЫТ +100», «УРОВЕНЬ 2». Живёт в 640×360.
 func toast(text: String, color: Color, y: float, fsize := 11) -> void:
 	var l := _label(text, Vector2(0, y), Vector2(640, 18), fsize, color)
@@ -538,14 +715,30 @@ func hide_play_hud(hide: bool) -> void:
 				c.visible = false
 			else:
 				c.visible = _hud_vis.get(c, true)
+	# после диалога напоминаем, куда идти
+	if not hide:
+		_objective_expand(OBJECTIVE_REMIND_HOLD)
 
 
 func set_objective(text: String) -> void:
 	if objective_label:
+		var same := text == objective_label.text
 		objective_label.text = text
 		var has_text := text.strip_edges() != ""
 		objective_panel.visible = has_text
 		objective_header.visible = has_text
+		# панель по ширине текста, но не дальше блока доверия справа
+		objective_panel.size.x = clampf(objective_label.get_minimum_size().x + 16.0, 120.0, 440.0)
+		objective_label.size.x = objective_panel.size.x - 16.0
+		if not has_text:
+			_objective_timer = 0.0
+			_objective_large = false
+			_kill_tween(_objective_tween)
+			_layout_stats()
+		elif same:
+			_objective_expand(OBJECTIVE_REMIND_HOLD)
+		else:
+			_objective_expand(OBJECTIVE_NEW_HOLD, true)
 
 
 func set_prompt(text: String) -> void:
@@ -609,6 +802,9 @@ func say(entries: Array) -> void:
 
 
 func _process(delta: float) -> void:
+	# таймеры затухания стоят, пока HUD скрыт диалогом или игра на паузе
+	if hero_group != null and not get_tree().paused and not dialogue_root.visible:
+		_process_fade(delta)
 	if typing and text_label:
 		var total := text_label.get_total_character_count()
 		text_label.visible_characters += int(delta * 42.0) + 1
@@ -784,3 +980,5 @@ func flash_damage() -> void:
 func set_counters(notes: int, items: int) -> void:
 	if counters_label:
 		counters_label.text = "Записки: %d/5 · Предметы: %d/6" % [notes, items]
+		if _changed("counters", [notes, items]):
+			_signal_change(stats_group)
