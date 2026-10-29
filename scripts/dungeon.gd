@@ -122,6 +122,14 @@ var puddles: Array[Node3D] = []
 var _puddle_packed: PackedScene
 ## Коробки низкой дымки (этап 7).
 var mist_volumes: Array[FogVolume] = []
+## Этап 8: M1 одевается библиотекой реквизита (SetDressing). Уровень 2
+## переопределяет build() и по-прежнему ставит реквизит из _prop().
+var dress_m1 := false
+## Бочки/ящики/столы/отбросы из m1_props.json — затравки кластеров SetDressing.
+var legacy_seeds: Array = []
+## Места геймплейных объектов, куда реквизит не ставится: {pos, r}.
+var reserved: Array = []
+var dressing: SetDressing
 ## Реверб комнат, тон помещения и случайные звуки (этап 10).
 var audio: DungeonAudio
 
