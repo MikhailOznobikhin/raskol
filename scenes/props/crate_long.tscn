@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_ngvva"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wooden_crate_02/wooden_crate_02_1k.gltf" id="2_0wj2v"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_dwjrh"]
+size = Vector3(0.486773, 0.463955, 1.07302)
+
+[node name="CrateLong" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_ngvva")
+footprint = Vector3(0.529101, 0.463955, 1.16633)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_0wj2v")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.00982365, 0.000177443)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.231977, 0)
+shape = SubResource("BoxShape3D_dwjrh")

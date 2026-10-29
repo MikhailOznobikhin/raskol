@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_vlgkx"]
+[ext_resource type="ArrayMesh" path="res://assets/props3d/rock_moss_set_02/parts/rock09.res" id="2_oxnqk"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_urtid"]
+size = Vector3(1.49861, 0.609855, 0.930552)
+
+[node name="RockB" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_vlgkx")
+size_class = 1
+footprint = Vector3(1.62893, 0.609855, 1.01147)
+
+[node name="Model" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0365105, 0.0378767, 0.020351)
+
+[node name="Rock09" type="MeshInstance3D" parent="Model"]
+mesh = ExtResource("2_oxnqk")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.304927, 0)
+shape = SubResource("BoxShape3D_urtid")

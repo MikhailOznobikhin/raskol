@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_6ntov"]
+[ext_resource type="PackedScene" path="res://assets/props3d/ceramic_pot/ceramic_pot_1k.gltf" id="2_kwoab"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bmpk5"]
+size = Vector3(0.60375, 0.371665, 0.461612)
+
+[node name="Pot" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_6ntov")
+size_class = 1
+footprint = Vector3(0.65625, 0.371665, 0.501752)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_kwoab")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.98023e-08, 0.000881767, -0.000357866)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.185833, 0)
+shape = SubResource("BoxShape3D_bmpk5")

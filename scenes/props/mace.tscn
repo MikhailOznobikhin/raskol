@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_ikkvr"]
+[ext_resource type="PackedScene" path="res://assets/props3d/ornate_medieval_mace/ornate_medieval_mace_1k.gltf" id="2_qk4yd"]
+
+[node name="Mace" type="Node3D" groups=["prop"]]
+script = ExtResource("1_ikkvr")
+size_class = 2
+footprint = Vector3(0.0948724, 0.101713, 0.63)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_qk4yd")]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, -3.6411e-05, 0.0508625, -0.210977)

@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://textures/decals/soot_streak.png" id="1_2gf4j"]
+
+[node name="SootStreak" type="Decal" groups=["decal"]]
+size = Vector3(0.8, 0.5, 1)
+texture_albedo = ExtResource("1_2gf4j")
+normal_fade = 0.5
+upper_fade = 0.1
+lower_fade = 0.1
+distance_fade_enabled = true
+distance_fade_begin = 30.0
+distance_fade_length = 8.0
+cull_mask = 1

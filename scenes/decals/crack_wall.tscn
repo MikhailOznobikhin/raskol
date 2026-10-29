@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://textures/decals/crack_0.png" id="1_2nhir"]
+
+[node name="CrackWall" type="Decal" groups=["decal"]]
+size = Vector3(1, 0.5, 1)
+texture_albedo = ExtResource("1_2nhir")
+normal_fade = 0.5
+upper_fade = 0.1
+lower_fade = 0.1
+distance_fade_enabled = true
+distance_fade_begin = 30.0
+distance_fade_length = 8.0
+cull_mask = 1

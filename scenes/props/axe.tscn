@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_3b05j"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wooden_axe/wooden_axe_1k.gltf" id="2_bg251"]
+
+[node name="Axe" type="Node3D" groups=["prop"]]
+script = ExtResource("1_3b05j")
+size_class = 2
+footprint = Vector3(0.047165, 0.214346, 0.630335)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_bg251")]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0.000249805, 0.178437, -0.0965546)

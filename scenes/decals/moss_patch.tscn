@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://textures/decals/moss_patch.png" id="1_do4k7"]
+[ext_resource type="Texture2D" path="res://textures/decals/moss_normal.png" id="2_4llxc"]
+
+[node name="MossPatch" type="Decal" groups=["decal"]]
+size = Vector3(1.4, 0.5, 0.7)
+texture_albedo = ExtResource("1_do4k7")
+texture_normal = ExtResource("2_4llxc")
+normal_fade = 0.5
+upper_fade = 0.1
+lower_fade = 0.1
+distance_fade_enabled = true
+distance_fade_begin = 30.0
+distance_fade_length = 8.0
+cull_mask = 1

@@ -102,7 +102,6 @@ var shadow_budget := 6
 var _glow_tex: GradientTexture2D
 var _banner_tex: ImageTexture
 ## Процедурные текстуры копоти/мха/сырости: один раз на уровень.
-var _grime_cache := {}
 var water_ripples: Array[Dictionary] = []
 ## Модули набора: имя → Mesh, и материалы glTF (albedo+normal+roughness).
 var kit: Dictionary = {}
@@ -118,6 +117,14 @@ var puddles: Array[Node3D] = []
 var _puddle_packed: PackedScene
 ## Коробки низкой дымки (этап 7).
 var mist_volumes: Array[FogVolume] = []
+## Этап 8: M1 одевается библиотекой реквизита (SetDressing). Уровень 2
+## переопределяет build() и по-прежнему ставит реквизит из _prop().
+var dress_m1 := false
+## Бочки/ящики/столы/отбросы из m1_props.json — затравки кластеров SetDressing.
+var legacy_seeds: Array = []
+## Места геймплейных объектов, куда реквизит не ставится: {pos, r}.
+var reserved: Array = []
+var dressing: SetDressing
 
 
 func _ready() -> void:
@@ -130,6 +137,7 @@ func _ready() -> void:
 func build() -> void:
 	# Материалы первыми: _load_kit сразу вешает их на меши набора.
 	_materials()
+	dress_m1 = true
 	_load_kit()
 	_load_map()
 	_shapes()
@@ -145,6 +153,7 @@ func build() -> void:
 	_add_torch_puddles()
 	_place_torches()
 	_place_hanging_fires()
+	_set_dressing()
 	_build_environment()
 	_build_reflection_probes()
 	_add_atmosphere()
@@ -1191,7 +1200,6 @@ func _build_reflection_probes() -> void:
 
 func _add_atmosphere() -> void:
 	_add_light_shafts()
-	_add_grime_decals()
 
 
 ## Световые конусы из щелей свода: дают контровой свет и видимый объём
@@ -1363,83 +1371,6 @@ func _add_drip(pos: Vector3, top: float) -> void:
 
 ## Копоть над огнём, мох у пола и лужицы: процедурные Decal вместо новых
 ## текстур, чтобы грязь не повторялась и не стоила ассетов.
-func _add_grime_decals() -> void:
-	var soot := _grime_texture("soot")
-	var moss := _grime_texture("moss")
-	var wet := _grime_texture("wet")
-	var soot_n := 0
-	for entry in lights:
-		if soot_n >= 10:
-			break
-		var l: OmniLight3D = entry.get("light")
-		if l == null or not is_instance_valid(l):
-			continue
-		var light_pos := _light_world_position(l)
-		var wall := _nearest_wall(light_pos)
-		if wall.is_empty():
-			continue
-		var n: Vector3 = wall["normal"]
-		var p: Vector3 = wall["pos"] + n * 0.05
-		# Копоть не заходит на свод: декаль выше начала гусёкa висела бы в воздухе.
-		p.y = clampf(light_pos.y + 0.55, 2.2, WALL_H - COVE_R - 0.55)
-		_decal(p, n, Vector3(2.4, 0.7, 2.2), soot, Color(1, 1, 1, 0.8))
-		soot_n += 1
-
-	var moss_n := 0
-	for y in range(1, map_h - 1):
-		for x in range(1, map_w - 1):
-			if moss_n >= 9:
-				break
-			if grid[y][x] or (x * 11 + y * 17) % 29 != 0:
-				continue
-			var wall := _nearest_wall(cell_center(x, y))
-			if wall.is_empty():
-				continue
-			var n: Vector3 = wall["normal"]
-			var p: Vector3 = wall["pos"] + n * 0.04
-			p.y = 0.35
-			_decal(p, n, Vector3(1.6, 0.45, 1.2), moss, Color(1, 1, 1, 0.65))
-			moss_n += 1
-
-	var floor_moss_n := 0
-	var floor_moss_material := StandardMaterial3D.new()
-	floor_moss_material.albedo_texture = moss
-	floor_moss_material.albedo_color = Color(0.9, 1.0, 0.72, 0.92)
-	floor_moss_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	floor_moss_material.roughness = 0.95
-	var focal_moss := [
-		Vector3(19.0, 0.0, 58.0),
-		Vector3(43.0, 0.0, 46.0),
-		Vector3(103.0, 0.0, 35.0),
-	]
-	for pos in focal_moss:
-		var cell := _nearest_open_cell(pos)
-		var p := cell_center(cell.x, cell.y) + Vector3(0, 0.04, 0)
-		_moss_patch(p, Vector2(1.7, 1.45), floor_moss_material)
-		floor_moss_n += 1
-	for y in range(1, map_h - 1):
-		for x in range(1, map_w - 1):
-			if floor_moss_n >= 10:
-				break
-			if grid[y][x] or int(dist[y][x]) > 2 or (x * 13 + y * 23) % 31 != 0:
-				continue
-			var p := cell_center(x, y) + Vector3(0, 0.04, 0)
-			_decal(p, Vector3.UP, Vector3(1.5, 0.24, 1.25), moss,
-				Color(0.82, 1.0, 0.68, 0.8))
-			floor_moss_n += 1
-
-	var wet_n := 0
-	for y in range(1, map_h - 1):
-		for x in range(1, map_w - 1):
-			if wet_n >= 5:
-				break
-			if grid[y][x] or (x * 7 + y * 19) % 41 != 0:
-				continue
-			var p := cell_center(x, y) + Vector3(0, 0.06, 0)
-			_decal(p, Vector3.UP, Vector3(1.4, 0.5, 1.1), wet, Color(1, 1, 1, 0.8))
-			wet_n += 1
-
-
 ## Ближайшая к точке стена: позиция на её лице и нормаль в сторону комнаты.
 func _nearest_wall(pos: Vector3) -> Dictionary:
 	var tx := int(floor(pos.x / T))
@@ -1455,65 +1386,6 @@ func _nearest_wall(pos: Vector3) -> Dictionary:
 			"normal": Vector3(-d.x, 0.0, -d.y),
 		}
 	return {}
-
-
-func _decal(pos: Vector3, normal: Vector3, size_v: Vector3, tex: Texture2D,
-		tint: Color) -> void:
-	var d := Decal.new()
-	d.texture_albedo = tex
-	d.size = size_v
-	d.modulate = tint
-	d.albedo_mix = 1.0
-	d.cull_mask = 1
-	# Decal проецирует вдоль локальной -Y: ставим Y вдоль нормали стены/пола.
-	var y := normal.normalized()
-	var x := y.cross(Vector3.UP)
-	if x.length() < 0.01:
-		x = y.cross(Vector3.RIGHT)
-	x = x.normalized()
-	var z := x.cross(y).normalized()
-	d.basis = Basis(x, y, z)
-	d.position = pos
-	add_child(d)
-
-
-func _moss_patch(pos: Vector3, size_v: Vector2, material: Material) -> void:
-	var mesh := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = size_v
-	mesh.mesh = plane
-	mesh.material_override = material
-	mesh.position = pos
-	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mesh)
-
-
-## Мягкое пятно с неровным краем: копоть, мох или сырость.
-func _grime_texture(kind: String) -> Texture2D:
-	if _grime_cache.has(kind):
-		return _grime_cache[kind]
-	var w := 128
-	var h := 128
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	for y in h:
-		for x in w:
-			var u := float(x) / float(w)
-			var v := float(y) / float(h)
-			var dx := u - 0.5
-			var dy := v - 0.5
-			var fall := clampf(1.0 - sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0)
-			var n := 0.5 + 0.5 * sin(u * 21.0 + sin(v * 13.0) * 2.3) \
-				* sin(v * 17.0 + sin(u * 9.0) * 2.0)
-			var a := fall * (0.25 + 0.75 * n)
-			var c := Color(0.06, 0.09, 0.11, a * 0.55)
-			if kind == "soot":
-				c = Color(0.03, 0.02, 0.015, a * 0.85)
-			elif kind == "moss":
-				c = Color(0.2, 0.28, 0.08, a * 0.85)
-			img.set_pixel(x, y, c)
-	var tex := ImageTexture.create_from_image(img)
-	_grime_cache[kind] = tex
-	return tex
 
 
 # ---------------------------------------------------------------------------
@@ -1916,7 +1788,19 @@ func _arched_doorway(pos: Vector3) -> void:
 	root.add_child(mi)
 
 
+## Типы m1_props.json, которые на M1 заменяет библиотека реквизита.
+const SEED_TYPES := ["barrel", "crate", "table", "refuse", "bucket"]
+## Геймплейные объекты: реквизит держится от них дальше.
+const GAMEPLAY_TYPES := ["cell_door", "gate", "lever", "stairs", "bars", "winch"]
+
+
 func _prop(type: String, pos: Vector3) -> void:
+	if dress_m1:
+		if type in SEED_TYPES:
+			legacy_seeds.append({"type": type, "pos": pos})
+			return
+		var r := 2.5 if type in GAMEPLAY_TYPES else _prop_clearance(type) + 0.3
+		reserved.append({"pos": Vector3(pos.x, 0.0, pos.z), "r": r})
 	match type:
 		"torch":
 			# Второй факел в трёх метрах от первого только пересвечивает
@@ -2066,6 +1950,10 @@ func _build_props() -> void:
 		var p: Dictionary = p0
 		var type: String = p.get("type", "")
 		if type in ["bones", "straw_bed", "bucket", "winch", "bars"]:
+			# своих мешей нет, но место занято: решётки и лебёдки — геймплей
+			if dress_m1:
+				_prop(type, Vector3(float(p.get("x", 0)) / 32.0 * T, 0.0,
+					float(p.get("y", 0)) / 32.0 * T))
 			continue
 		var pos := Vector3(float(p.get("x", 0)) / 32.0 * T, 0.0, float(p.get("y", 0)) / 32.0 * T)
 		# Двери, ворота, рычаг и лестница привязаны к координатам событий
@@ -2217,15 +2105,9 @@ func _scatter_torches(max_count: int = 4) -> void:
 
 
 func _dress_rooms() -> void:
+	# Полки, нары, щебень и стойки из примитивов убраны на этапе 8:
+	# их место заняла библиотека реквизита (SetDressing).
 	var spots := {
-		"shelf": [Vector3(20, 0, 60), Vector3(60, 0, 52), Vector3(96, 0, 40),
-			Vector3(144, 0, 30), Vector3(92, 0, 82)],
-		"bed": [Vector3(24, 0, 62), Vector3(100, 0, 36), Vector3(88, 0, 30),
-			Vector3(118, 0, 82)],
-		"rubble": [Vector3(34, 0, 58), Vector3(70, 0, 50), Vector3(50, 0, 40),
-			Vector3(104, 0, 46), Vector3(124, 0, 40), Vector3(84, 0, 78)],
-		"rack": [Vector3(30, 0, 50), Vector3(86, 0, 34), Vector3(45, 0, 28),
-			Vector3(126, 0, 40), Vector3(82, 0, 80)],
 		# Стартовая камера: один тёплый ключ у решётки, иначе первый кадр
 		# остаётся тёмным пятном без читаемого силуэта.
 		"brazier_stand": [Vector3(9, 0, 54)],
@@ -2243,6 +2125,15 @@ func _dress_rooms() -> void:
 				_prop(kind, _floor_safe(pos, 0.12))
 			else:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
+
+
+## Этап 8: реквизит по комнатам, декали и рёбра свода (scripts/set_dressing.gd).
+## Ставится после всех огней: копоть ищет настенные факелы, высокие
+## предметы обходят их стороной.
+func _set_dressing() -> void:
+	dressing = SetDressing.new()
+	add_child(dressing)
+	dressing.dress(self)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_j2un6"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wine_barrel_01/wine_barrel_01_1k.gltf" id="2_5fs53"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_53c2k"]
+size = Vector3(0.682549, 0.871263, 0.695553)
+
+[node name="BarrelWine" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_j2un6")
+footprint = Vector3(0.741902, 0.871263, 0.756036)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_5fs53")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.51992e-06, -0.000684172, -0.00706491)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.435632, 0)
+shape = SubResource("BoxShape3D_53c2k")

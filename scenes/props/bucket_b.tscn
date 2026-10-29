@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_3p54o"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wooden_bucket_02/wooden_bucket_02_1k.gltf" id="2_xmk0x"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ds2yt"]
+size = Vector3(0.566101, 0.350425, 0.566999)
+
+[node name="BucketB" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_3p54o")
+size_class = 1
+footprint = Vector3(0.615327, 0.350425, 0.616303)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_xmk0x")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.000121653, -0.000261456, 0.000543326)
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.175213, 0)
+shape = SubResource("BoxShape3D_ds2yt")

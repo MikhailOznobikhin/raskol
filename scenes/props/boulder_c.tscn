@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_0bv7u"]
+[ext_resource type="ArrayMesh" path="res://assets/props3d/rock_moss_set_01/parts/rock05.res" id="2_1dse2"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_8ihxl"]
+size = Vector3(1.67194, 1.20545, 2.75877)
+
+[node name="BoulderC" type="StaticBody3D" groups=["prop"]]
+collision_mask = 0
+script = ExtResource("1_0bv7u")
+footprint = Vector3(1.81732, 1.20545, 2.99866)
+
+[node name="Model" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0479937, 0.572554, -0.148393)
+
+[node name="Rock05" type="MeshInstance3D" parent="Model"]
+mesh = ExtResource("2_1dse2")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.602725, 0)
+shape = SubResource("BoxShape3D_8ihxl")

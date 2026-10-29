@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_ajr6r"]
+[ext_resource type="ArrayMesh" path="res://assets/props3d/wooden_barrels_01/parts/piece08.res" id="2_64vv4"]
+
+[node name="PlankC" type="Node3D" groups=["prop"]]
+script = ExtResource("1_ajr6r")
+size_class = 3
+footprint = Vector3(0.569674, 0.0577134, 0.399523)
+
+[node name="Model" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0012573, 0.039904, -0.00142303)
+
+[node name="Piece08" type="MeshInstance3D" parent="Model"]
+mesh = ExtResource("2_64vv4")

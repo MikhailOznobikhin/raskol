@@ -73,3 +73,19 @@ Mixamo и Sketchfab), поэтому шляпа Торвина собрана и
 из `docs/prompts/`, с водяным знаком сервиса. В игру не подключены, используются как
 референсы. Лицензия сервиса на генерации — свободное использование, водяной знак
 удалять нельзя.
+
+## Реквизит и декали этапа 8 (`assets/props3d/`, `textures/decals/`)
+
+Скачаны 2026-10-29. Исходники — `tools/assets_incoming/stage8_cc0/` (вне git).
+В репозитории лежат только glTF 1k с текстурами и собранные из них маски.
+
+| Файл / что | Источник | Автор | Лицензия |
+|---|---|---|---|
+| `wine_barrel_01`, `wooden_barrels_01` (бочки и обломки бочек — «доски»), `wooden_crate_01/02`, `Shelf_01`, `wooden_bookshelf_worn`, `WoodenTable_01`, `round_wooden_table_01`, `wooden_stool_01/02`, `wooden_bucket_01/02`, `ceramic_pot`, `jug_01`, `wooden_bowl_01`, `carved_wooden_plate`, `wooden_candlestick`, `wooden_lantern_01`, `wooden_axe`, `ornate_medieval_mace`, `kite_shield`, `rock_07`, `rock_moss_set_01/02` | Poly Haven, <https://polyhaven.com/models> (страница модели = `https://polyhaven.com/a/<id>`) | авторы Poly Haven (указаны на странице модели) | CC0 |
+| `Moss002` — цвет и нормаль мха (`moss_patch.png`, `moss_normal.png`) | ambientCG, <https://ambientcg.com/view?id=Moss002> | Lennart Demes | CC0 |
+| `Leaking006` — маска мазка внутри копоти и потёков (`soot_streak.png`, `damp_streak.png`) | ambientCG, <https://ambientcg.com/view?id=Leaking006> | Lennart Demes | CC0 |
+| `dirt_patch.png` | песок из пака подземелья (`assets/models/dungeon_kit/textures/sand_basecolor.jpg`) + маска кодом | — | как у пака |
+| `crack_0..2.png` | сгенерированы кодом (`src/make_set_dressing.gd`) | — | внешней лицензии нет |
+
+Скачано, но в игру не вошло: `Barrel_01` (современная бочка с маркировкой «взрывоопасно»),
+`Leaking013A/016A` (капли на металле), `AsphaltDamage001` (заплатка асфальта).

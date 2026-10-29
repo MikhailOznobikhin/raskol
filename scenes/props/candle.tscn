@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/props/prop.gd" id="1_8hqu3"]
+[ext_resource type="PackedScene" path="res://assets/props3d/wooden_candlestick/wooden_candlestick_1k.gltf" id="2_mht1s"]
+
+[node name="Candle" type="Node3D" groups=["prop"]]
+script = ExtResource("1_8hqu3")
+size_class = 2
+footprint = Vector3(0.0972229, 0.21966, 0.0986747)
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_mht1s")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.000100009, 0, 7.51652e-05)

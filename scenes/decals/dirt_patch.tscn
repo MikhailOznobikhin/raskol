@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://textures/decals/dirt_patch.png" id="1_34gnx"]
+
+[node name="DirtPatch" type="Decal" groups=["decal"]]
+size = Vector3(1.2, 0.4, 1.2)
+texture_albedo = ExtResource("1_34gnx")
+normal_fade = 0.5
+upper_fade = 0.1
+lower_fade = 0.1
+distance_fade_enabled = true
+distance_fade_begin = 30.0
+distance_fade_length = 8.0
+cull_mask = 1

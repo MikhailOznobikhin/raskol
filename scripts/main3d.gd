@@ -567,6 +567,27 @@ func _test_dungeon_boundary(dungeon: Dungeon) -> bool:
 	return true
 
 
+## Этап 8: реквизит стоит на полу (PropGrounding, допуск +2/−5 см) и не
+## сужает проход у стен до меньше 1.5 м (SetDressing.check_paths).
+func _test_set_dressing(dungeon: Dungeon) -> bool:
+	if dungeon.dressing == null:
+		print("TEST FAIL: нет SetDressing")
+		return false
+	var space := dungeon.get_world_3d().direct_space_state
+	var g := PropGrounding.check(dungeon, space, false)
+	for line in g["lines"]:
+		print(line)
+	print("TEST props grounded checked=", g["checked"], " floating=", g["floating"],
+		" sunken=", g["sunken"], " no_floor=", g["no_floor"])
+	var p := dungeon.dressing.check_paths(space)
+	print("TEST props paths solids=", p["solids"], " min=", snappedf(p["min"], 0.01),
+		" narrow=", p["narrow"])
+	if g["floating"] + g["sunken"] + g["no_floor"] > 0 or p["narrow"] > 0:
+		print("TEST FAIL: реквизит висит/утонул или перекрыл проход")
+		return false
+	return true
+
+
 func _test_mode() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	start_mission()
@@ -586,6 +607,9 @@ func _test_mode() -> void:
 	print("TEST dungeon boundary collisions=", boundary_collision)
 	if not boundary_collision:
 		print("TEST FAIL: внешний контур подземелья не закрыт коллизиями")
+		get_tree().quit()
+		return
+	if not _test_set_dressing(m.dungeon):
 		get_tree().quit()
 		return
 

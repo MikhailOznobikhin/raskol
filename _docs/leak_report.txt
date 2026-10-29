@@ -1,4 +1,4 @@
 LEAK_TEST_REPORT
-reachable_cells=432
+reachable_cells=425
 HOLES=0
 LEAKS=0
