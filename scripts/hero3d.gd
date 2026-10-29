@@ -270,6 +270,9 @@ func _build_rig() -> void:
 
 	_add_blob_shadow(0.55)
 	_attach_model()
+	# Лужи-декали проецируются только на слой 1: герой живёт на слое 2,
+	# иначе вода красит сапоги и плащ.
+	ModelUtil.set_visual_layer(self, ModelUtil.CHARACTER_LAYER)
 
 
 ## Надевает glTF-модель гнома на риг и вешает молот в правую кисть.

@@ -26,6 +26,15 @@ const COVE_SEG := 6
 ## а лицевая кладка на 1.901 м глубже. Сдвигаем модуль в зал, чтобы кирпич
 ## встал на плоскость грани, а свод ушёл в комнату на этот же метр с лишним.
 const WALL_SHIFT := -1.901
+## Лужи — проецирующие декали (res://scenes/props/puddle.tscn), а не плоскости.
+const PUDDLE_SCENE := "res://scenes/props/puddle.tscn"
+## Центр коробки декали над полом: коробка обязана пересекать поверхность,
+## иначе проекция начинается ровно на ней и лужа обрезается по краю.
+const PUDDLE_LIFT := 0.1
+## Старые лужи были PlaneMesh на 0.025 м: они висели НАД полом и читались
+## синими пятнами. Код оставлен под флагом для A/B-сравнения; включённые
+## узлы уходят в скрытый _deprecated, а не удаляются.
+const LEGACY_PUDDLE_PLANES := false
 
 var lines: Array = []
 var map_w := 0
@@ -86,6 +95,11 @@ var _arch_open := {}
 var _pier_mats := {}
 ## Заплатки земли на полу залов (res://materials/floor_dirt.tres).
 var mat_dirt: Material
+## Поставленные лужи-декали: чтобы не класть два пятна в одну точку.
+var puddles: Array[Node3D] = []
+## Скрытый контейнер выведенных из кадра узлов (этап 5: старые плоскости луж).
+var _deprecated: Node3D
+var _puddle_packed: PackedScene
 
 
 func _ready() -> void:
@@ -110,8 +124,11 @@ func build() -> void:
 	_build_props()
 	_dress_rooms()
 	_scatter_torches()
+	_add_torch_puddles()
 	_build_environment()
+	_build_reflection_probes()
 	_add_atmosphere()
+	print("PUDDLES decals=", puddles.size(), " legacy=", LEGACY_PUDDLE_PLANES)
 
 
 ## Загрузка набора модулей. Модули уже стоят в своих системах координат
@@ -1088,6 +1105,14 @@ func _build_environment() -> void:
 	env.ssil_radius = 2.0
 	env.ssil_intensity = 1.2
 	env.ssil_sharpness = 0.98
+	# Отражения в лужах: без SSR глянец декали читается одной белой точкой
+	# блика и ничем больше. 64 шага — компромисс: на 48 в отражении видны
+	# разрывы, на 96 уже дорого для кадра 1080p на GTX 1660.
+	env.ssr_enabled = true
+	env.ssr_max_steps = 64
+	env.ssr_fade_in = 0.15
+	env.ssr_fade_out = 2.0
+	env.ssr_depth_tolerance = 0.2
 	# объёмный туман даёт световые конусы от факелов. Плотность 0.02 у мыши
 	# факела героя выбеливала полкадра и прятала кладку набора: свели к 0.01.
 	env.volumetric_fog_enabled = true
@@ -1111,6 +1136,43 @@ func _build_environment() -> void:
 	fill.shadow_enabled = false
 	fill.rotation_degrees = Vector3(-55.0, 32.0, 0.0)
 	add_child(fill)
+
+
+## Пробники отражений по мокрым залам. SSR видит только то, что попало в
+## кадр, а факел за спиной героя в лужу не отражается — эти пробники
+## дополняют его. UPDATE_ONCE: шесть граней считаются один раз при старте,
+## в каждом кадре пробник ничего не стоит.
+## cull_mask = 1 — персонажи (слой 2) в отражение не запекаются: иначе в
+## луже навсегда остаётся гном, стоявший на старте миссии.
+func _build_reflection_probes() -> void:
+	# Точка, полуразмер по X/Z. Высота берётся из потолка клетки.
+	var rooms := [
+		[Vector3(14.0, 0.0, 60.0), Vector2(14.0, 12.0)],
+		[Vector3(34.0, 0.0, 52.0), Vector2(18.0, 16.0)],
+		[Vector3(70.0, 0.0, 54.0), Vector2(16.0, 16.0)],
+		[Vector3(102.0, 0.0, 40.0), Vector2(18.0, 16.0)],
+		[Vector3(128.0, 0.0, 34.0), Vector2(16.0, 14.0)],
+		[Vector3(112.0, 0.0, 78.0), Vector2(16.0, 14.0)],
+	]
+	for room in rooms:
+		var anchor: Vector3 = room[0]
+		var half: Vector2 = room[1]
+		var c := _nearest_open_cell(anchor)
+		var top: float = cell_ceil(c.x, c.y)
+		var probe := ReflectionProbe.new()
+		probe.size = Vector3(half.x, top, half.y)
+		probe.position = cell_center(c.x, c.y) + Vector3(0.0, top * 0.5, 0.0)
+		# Точка съёмки — на уровне глаз (1.5 м), а не в середине коробки:
+		# иначе отражение свода смотрится сверху вниз и лужа читается зеркалом.
+		probe.origin_offset = Vector3(0.0, 1.5 - top * 0.5, 0.0)
+		probe.interior = true
+		probe.update_mode = ReflectionProbe.UPDATE_ONCE
+		probe.cull_mask = 1
+		# Свет внутрь коробки пробник не добавляет: ambient остаётся уровневый,
+		# пробник даёт только отражения и блик.
+		probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		add_child(probe)
+	print("REFLECT probes=", rooms.size(), " ssr=true")
 
 
 # ---------------------------------------------------------------------------
@@ -1152,6 +1214,10 @@ func _add_light_shafts() -> void:
 		# SpotLight3D светит вдоль -Z; поворот на -90° направляет его вниз.
 		spot.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 		add_child(spot)
+		# Под трещиной мокро: лужа и, у двух залов, капель с потолка.
+		var wet := _puddle_under_crack(center)
+		if not puddles.is_empty() and (i == 0 or i == 2):
+			_add_drip(wet, top)
 		_add_dust(center, top)
 
 
@@ -1188,6 +1254,50 @@ func _add_dust(center: Vector3, top: float) -> void:
 	p.draw_pass_1 = quad
 	p.position = center + Vector3(0, top * 0.5, 0)
 	add_child(p)
+
+
+## Капель с трещины: одна капля раз в 1.5–4 с. Один частичный узел
+## перезапускается таймером — ровный поток читался бы дождём, а не сыростью.
+## Звука капли в проекте ещё нет: сырьё для него — этап 10.
+func _add_drip(pos: Vector3, top: float) -> void:
+	var drop := GPUParticles3D.new()
+	drop.amount = 1
+	drop.lifetime = 1.0
+	drop.one_shot = true
+	drop.local_coords = false
+	drop.position = Vector3(pos.x, top - 0.05, pos.z)
+	drop.visibility_aabb = AABB(Vector3(-1.0, -top - 1.0, -1.0),
+		Vector3(2.0, top + 2.0, 2.0))
+	var pm := ParticleProcessMaterial.new()
+	pm.direction = Vector3(0.0, -1.0, 0.0)
+	pm.spread = 0.0
+	pm.initial_velocity_min = 0.2
+	pm.initial_velocity_max = 0.5
+	pm.gravity = Vector3(0.0, -9.8, 0.0)
+	pm.scale_min = 1.0
+	pm.scale_max = 1.0
+	# Капля — вытянутый по Y квад, развёрнутый по вектору скорости: иначе
+	# в кадре мелькает квадратик, а не струйка.
+	pm.particle_flag_align_y = true
+	drop.process_material = pm
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.016, 0.085)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.62, 0.72, 0.78, 0.6)
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	quad.material = mat
+	drop.draw_pass_1 = quad
+	add_child(drop)
+	var timer := Timer.new()
+	timer.wait_time = randf_range(1.5, 4.0)
+	timer.autostart = true
+	drop.add_child(timer)
+	timer.timeout.connect(func():
+		drop.restart()
+		timer.wait_time = randf_range(1.5, 4.0)
+	)
 
 
 ## Копоть над огнём, мох у пола и лужицы: процедурные Decal вместо новых
@@ -1930,40 +2040,10 @@ func _prop(type: String, pos: Vector3) -> void:
 			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_beam)
 			for i in 3:
 				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
-		"puddle", "cistern_pool":
-			var puddle := Node3D.new()
-			puddle.position = pos + Vector3(0, 0.025, 0)
-			add_child(puddle)
-			var q := MeshInstance3D.new()
-			var pm := PlaneMesh.new()
-			pm.size = Vector2(5.2, 3.8) if type == "cistern_pool" \
-				else Vector2(2.2, 1.7)
-			q.mesh = pm
-			q.material_override = mat_puddle_water
-			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			puddle.add_child(q)
-
-			var ripple_mesh := TorusMesh.new()
-			ripple_mesh.inner_radius = 0.19
-			ripple_mesh.outer_radius = 0.22
-			ripple_mesh.rings = 32
-			ripple_mesh.ring_segments = 6
-			var ripple := MeshInstance3D.new()
-			ripple.mesh = ripple_mesh
-			ripple.position.y = 0.012
-			ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var ripple_mat := StandardMaterial3D.new()
-			ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
-			ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			ripple_mat.metallic = 0.15
-			ripple_mat.roughness = 0.2
-			ripple.material_override = ripple_mat
-			puddle.add_child(ripple)
-			water_ripples.append({
-				"mesh": ripple,
-				"material": ripple_mat,
-				"seed": randf(),
-			})
+		"puddle":
+			_add_puddle_cluster(pos, 2)
+		"cistern_pool":
+			_add_puddle_cluster(pos, 3)
 		_:
 			pass
 
@@ -2154,6 +2234,128 @@ func _dress_rooms() -> void:
 				_prop(kind, _floor_safe(pos, 0.12))
 			else:
 				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))
+
+
+# ---------------------------------------------------------------------------
+# этап 5: лужи (проецирующие декали, а не плоскости над полом)
+
+## Лужа-декаль: пятно проецируется на коббл, поэтому повторяет его рельеф
+## и лежит В полу, а не висит над ним, как старые плоскости.
+func _add_puddle(pos: Vector3, big := false) -> void:
+	if LEGACY_PUDDLE_PLANES:
+		_legacy_puddle_plane(pos, big)
+		return
+	if _puddle_packed == null:
+		if not ResourceLoader.exists(PUDDLE_SCENE):
+			push_warning("нет сцены лужи " + PUDDLE_SCENE)
+			return
+		_puddle_packed = load(PUDDLE_SCENE)
+	var puddle: Node3D = _puddle_packed.instantiate()
+	puddle.set("base_scale", 1.7 if big else 1.0)
+	puddle.position = Vector3(pos.x, PUDDLE_LIFT, pos.z)
+	add_child(puddle)
+	puddles.append(puddle)
+
+
+## Одиночное круглое пятно читается наклейкой, поэтому лужи ставятся
+## кластером: центральное пятно и 1–3 спутника со сдвигом другого размера.
+func _add_puddle_cluster(pos: Vector3, companions: int) -> void:
+	_add_puddle(pos, companions > 1)
+	var c := _nearest_open_cell(pos)
+	var h := _cell_hash(c.x, c.y, 71)
+	for i in companions:
+		var ang := TAU * float((h >> (i * 4)) % 16) / 16.0
+		var r := 0.55 + float((h >> (i * 3)) % 4) * 0.22
+		var p := _floor_safe(pos + Vector3(cos(ang) * r, 0.0, sin(ang) * r), 0.30)
+		if _puddle_near(p, 0.45):
+			continue
+		_add_puddle(p, false)
+
+
+## Лужа у стены под факелом. Вода течёт к стене, и там же её подсвечивает
+## огонь — только так глянец читается водой, а не тёмным пятном.
+## Ставится после _scatter_torches(): нужны сами источники света.
+func _add_torch_puddles() -> void:
+	var placed := 0
+	for entry in lights:
+		if placed >= 2:
+			break
+		var li: OmniLight3D = entry.get("light")
+		if li == null or not is_instance_valid(li):
+			continue
+		var p := _light_world_position(li)
+		var wall := _nearest_wall(p)
+		if wall.is_empty():
+			continue
+		var n: Vector3 = wall["normal"]
+		var spot := Vector3(p.x, 0.0, p.z) + n * 1.15
+		if _puddle_near(spot, 1.4):
+			continue
+		_add_puddle(_floor_safe(spot, 0.30), false)
+		placed += 1
+	print("PUDDLES torch_lit=", placed)
+
+
+## Есть ли лужа ближе radius: два пятна в одной точке читаются грязью.
+func _puddle_near(pos: Vector3, radius: float) -> bool:
+	for p in puddles:
+		if Vector2(p.position.x - pos.x, p.position.z - pos.z).length() < radius:
+			return true
+	return false
+
+
+## Пол под трещиной свода мокрый: вода собирается там, где капает.
+## Возвращает точку пола под капелью — существующую лужу, если она рядом.
+func _puddle_under_crack(pos: Vector3) -> Vector3:
+	for p in puddles:
+		if Vector2(p.position.x - pos.x, p.position.z - pos.z).length() < 1.8:
+			return Vector3(p.position.x, 0.0, p.position.z)
+	_add_puddle(pos, false)
+	return Vector3(pos.x, 0.0, pos.z)
+
+
+## Лужа до этапа 5: плоскость на 0.025 м НАД полом плюс бегущий тор-круг.
+## Включена только под LEGACY_PUDDLE_PLANES (A/B-сравнение); узлы уходят в
+## скрытый _deprecated и не удаляются — удалять только с согласия владельца.
+func _legacy_puddle_plane(pos: Vector3, big: bool) -> void:
+	if _deprecated == null:
+		_deprecated = Node3D.new()
+		_deprecated.name = "_deprecated"
+		_deprecated.visible = false
+		_deprecated.process_mode = Node.PROCESS_MODE_DISABLED
+		add_child(_deprecated)
+	var puddle := Node3D.new()
+	puddle.position = pos + Vector3(0, 0.025, 0)
+	_deprecated.add_child(puddle)
+	var q := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(5.2, 3.8) if big else Vector2(2.2, 1.7)
+	q.mesh = pm
+	q.material_override = mat_puddle_water
+	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	puddle.add_child(q)
+
+	var ripple_mesh := TorusMesh.new()
+	ripple_mesh.inner_radius = 0.19
+	ripple_mesh.outer_radius = 0.22
+	ripple_mesh.rings = 32
+	ripple_mesh.ring_segments = 6
+	var ripple := MeshInstance3D.new()
+	ripple.mesh = ripple_mesh
+	ripple.position.y = 0.012
+	ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ripple_mat := StandardMaterial3D.new()
+	ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
+	ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ripple_mat.metallic = 0.15
+	ripple_mat.roughness = 0.2
+	ripple.material_override = ripple_mat
+	puddle.add_child(ripple)
+	water_ripples.append({
+		"mesh": ripple,
+		"material": ripple_mat,
+		"seed": randf(),
+	})
 
 
 ## KillZone: страховка от выхода за нижнюю границу уровня.

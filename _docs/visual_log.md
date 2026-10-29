@@ -142,3 +142,70 @@
 | 4 | Repetition much less visible on long walls; walls darker/damp near the floor | **PARTIAL** | Грязь: видна на `spot_08` — стена темнеет в нижних ~1.1 м, damp 0.35 (ALBEDO mix + ROUGHNESS к 0.22). Повтор: `variation_strength 0.22` + бесшовный NoiseTexture2D 512² (frequency 0.02) снимает обои на ближней дистанции, но атлас 4 м на 30-метровой стене ещё повторяется на средней дистанции. FAIL по второй половине критерия, честно. |
 | 5 | No placeholder-looking trims; ceiling not the brightest surface | **PASS** | `stone_wall_albedo.png` (серая блочная заглушка из tex3d) больше не используется ни одним материалом окружения: `stone_trim`/`wall_stone_blocks` переведены на атлас кладки пака (tint 0.62 / 0.78, roughness_floor 0.70 / 0.62), аварийный пол — на `tile_floor`. Потолок: `ceiling_vault` tint 0.72 против 0.94 у стены (−23 %), на `spot_08`/`spot_10` потолок темнее стен. |
 | 6 | No shader compile errors | **PASS** | Лог фототура (`tools/_tour.log`) и `build.ps1 -Test` без `SHADER ERROR`/`error compiling`; оба шейдера отрисованы в кадре (грязь и вариация видны), значит скомпилировались и исполнились. |
+
+## Stage 5
+
+- Stage number: 5 (лужи и вода: декали вместо парящих плоскостей)
+- Branch: `visual/stage-5`
+- Files changed:
+  - `src/gen_puddle_textures.gd` (новый генератор текстур; лежит в `src/`, а не в `tools/`, потому что каталог `tools/` целиком в .gitignore — тот же приём, что у `src/make_materials.gd` этапа 4)
+  - `res://textures/decals/puddle_mask_0..3.png`, `puddle_orm.png`, `puddle_normal.png` (+ их `.import`: `compress/mode=0`, `mipmaps/generate=true`, `detect_3d/compress_to=0`, чтобы мягкие края маски не попали в блочное DXT-сжатие)
+  - `scenes/props/puddle.tscn` (новая сцена лужи) и `scenes/props/puddle.gd` (новый скрипт)
+  - `scripts/dungeon.gd` — единственный изменённый крупный скрипт (подробности ниже)
+  - `scripts/model_util.gd` — `CHARACTER_LAYER := 2` и `set_visual_layer(root, layer)`
+  - `scripts/hero3d.gd` — один вызов слоя в конце `_build_rig()`
+  - `scripts/enemy3d.gd` — тот же вызов в конце `_ready()`
+  - `scripts/mission3d.gd` — смещена фото-точка `spot_01_torch_puddle` (она называлась «torch_puddle», но лужи в кадре не было)
+  - `_docs/visual_log.md` (эта запись)
+- Step 1 — старые лужи (что и где было): все лужи строились кодом как `PlaneMesh` на `y = 0.025` над полом с материалом `mat_puddle_water` и бегущим тор-кругом.
+  - из `_dress_rooms()`: `(15, 0, 59)`, `(48, 0, 47)`, `(72, 0, 55)`, `(106, 0, 33)`, `(98, 0, 42)` — после `_floor_safe(pos, 0.12)`;
+  - из `assets/level/m1_props.json`: `cistern_pool` x=2048 y=544 → `(128, 0, 34)` размером 5.2×3.8 м; `puddle` x=1984 y=1216 → `(124, 0, 76)`; `puddle` x=1792 y=1280 → `(112, 0, 80)`.
+  - Старый код не удалён: он вынесен в `_legacy_puddle_plane(pos, big)` под константой `LEGACY_PUDDLE_PLANES := false`; при включении узлы уходят в скрытый `Dungeon/_deprecated` (`visible = false`, `process_mode = PROCESS_MODE_DISABLED`). По умолчанию не строится ничего, поэтому в кадре парящих плоскостей нет. Удалять этот код — только с согласия владельца.
+- Step 2 — текстуры (`src/gen_puddle_textures.gd`, запуск `godot --headless --path . --script res://src/gen_puddle_textures.gd`):
+  - `puddle_mask_0..3.png` — 512² RGBA8, до трёх перекрывающихся пятен (радиусы 0.34 / 0.24 / 0.20 от размера), FastNoiseLite SIMPLEX_SMOOTH, FBM, 3 октавы, frequency 0.011; альфа = `smoothstep(0.0, 0.22, best)`, цвет от `(0.062, 0.072, 0.082)` (кромка, тонкая плёнка) до `(0.028, 0.036, 0.046)` (центр);
+  - `puddle_orm.png` — 16² RGB8, `(1.0, 0.02, 0.0)`: AO 1, шероховатость 0.02 (вода — зеркало), металл 0;
+  - `puddle_normal.png` — 8² RGB8, плоская нормаль `(0.5, 0.5, 1.0)`: она нужна не для рельефа, а чтобы у декали работал `normal_fade`.
+- Step 3 — `scenes/props/puddle.tscn` (корень `Decal` с именем `Puddle`), значения:
+  - `size = Vector3(1.5, 0.4, 1.5)`, `texture_albedo = puddle_mask_0.png`, `texture_normal = puddle_normal.png`, `texture_orm = puddle_orm.png`,
+  - `albedo_mix = 0.55`, `normal_fade = 0.5`, `upper_fade = 0.0`, `lower_fade = 0.0`,
+  - `cull_mask = 1` (персонажи — слой 2, декаль их не трогает),
+  - `distance_fade_enabled = true`, `distance_fade_begin = 30.0`, `distance_fade_length = 8.0`.
+  - Скрипт лужи: `@export var base_scale := 1.0`, `@export_range(0, 3) var variant := 0`, `@export var randomize_on_ready := true`; при случайном режиме берётся случайная маска из четырёх, случайный поворот по Y и множитель 0.7–1.5 на X/Z (по Y масштаб не меняется, иначе глубина проекции растёт).
+  - Отклонение от задания: `upper_fade`/`lower_fade` стоят 0.0, а не 0.3. Замер: на микростенде с 0.3 декаль не видна вообще, с 0.0 видна (область AABB 0.4 м, поверхность пола лежит в 0.1 м от центра, то есть ровно на границе затухания). Документация Godot по `Decal` для «hard surface» декалей прямо советует `upper_fade`/`lower_fade = 0.0` при малом Y размера. Центр декали остался на 0.1 м выше пола, как в задании.
+- Step 4 — расстановка (`scripts/dungeon.gd`):
+  - `const PUDDLE_SCENE := "res://scenes/props/puddle.tscn"`, `const PUDDLE_LIFT := 0.1`;
+  - `_add_puddle(pos, big)` — инстанцирует сцену, `base_scale` 1.0 / 1.7, ставит на `PUDDLE_LIFT` над полом, копит узлы в `puddles`;
+  - `_add_puddle_cluster(pos, companions)` — центральное пятно + 1–3 спутника со сдвигом 0.55–1.21 м под углом из `_cell_hash(cell, 71)`, спутники не ставятся ближе 0.45 м к уже поставленным (`_puddle_near`);
+  - `_prop("puddle")` → кластер из 3 пятен, `_prop("cistern_pool")` → из 4 (крупное центральное);
+  - `_add_light_shafts()` — под каждой трещиной свода появляется лужа (`_puddle_under_crack`), у двух залов ещё и капель;
+  - `_add_torch_puddles()` (после `_scatter_torches()`) — две лужи у основания стены в 1.15 м от факела: там вода и подсвечена огнём;
+  - итог в логе автотеста: `PUDDLES decals=31 legacy=false`, `PUDDLES torch_lit=2`. Это 31 декаль на ~5000 м² уровня, 2–5 на мокрый зал, как в задании.
+- Step 5 — отражения:
+  - `Environment` в `_build_environment()`: `ssr_enabled = true`, `ssr_max_steps = 64`, `ssr_fade_in = 0.15`, `ssr_fade_out = 2.0`, `ssr_depth_tolerance = 0.2`;
+  - `_build_reflection_probes()` — 6 пробников, `Dungeon/ReflectionProbe` (узлы создаются кодом): залы `(14, 60)`, `(34, 52)`, `(70, 54)`, `(102, 40)`, `(128, 34)`, `(112, 78)`; `size = (14…18, cell_ceil, 12…16)`, `position.y = top/2`, `origin_offset = (0, 1.5 − top/2, 0)` (точка съёмки — на высоте глаз), `interior = true`, `update_mode = UPDATE_ONCE`, `cull_mask = 1`, `ambient_mode = AMBIENT_DISABLED` (пробник даёт только отражения, ambient остаётся уровневый, иначе свет в залах поехал бы). В логе: `REFLECT probes=6 ssr=true`.
+- Step 6 — капель (без звука): `_add_drip(pos, top)` — `GPUParticles3D` (`amount = 1`, `lifetime = 1.0`, `one_shot = true`, `local_coords = false`, `visibility_aabb` на всю высоту зала), `ParticleProcessMaterial` (направление −Y, spread 0, `gravity = (0, −9.8, 0)`, `particle_flag_align_y = true`), квад вытянут по Y 0.016×0.085, unshaded, альфа 0.6; перезапуск по `Timer` со случайными 1.5–4 с. Капель стоит под двумя лужами (первая и третья трещины свода).
+  - Звука капли нет: в `assets/audio/` нет подходящего сэмпла, звук — этап 10. Комментария-заглушки в коде не оставлено, вместо этого факт записан здесь.
+- Слой персонажей (нужен для `cull_mask`): `ModelUtil.set_visual_layer(root, layer)` ставит всем `MeshInstance3D` поддерева `layers = 1 << (layer − 1)`; герой (`hero3d.gd`, конец `_build_rig()`) и враги (`enemy3d.gd`, конец `_ready()`) уходят на слой 2. Камера и источники света по умолчанию видят все слои, поэтому на вид персонажей это не влияет.
+- Что могло не получиться и почему (честно):
+  - **Глянец в кадре слабый.** SSR и пробники включены, `puddle_orm.png` даёт шероховатость 0.02, в ближнем кадре у лужи видно блик и тёмную кромку, но в общем плане при текущем свете (равномерный оранжевый/плоский, тёмные залы — этап 6) отражение факела читается только вблизи. Замер вклада лужи (кадр с лужами и без, `tools/puddle_check.gd`): `mean_diff=0.011`, изменено `6.75 %` пикселей кадра — то есть лужи меняют картинку, но не «стреляют» отражениями.
+  - **Производительность не измерялась.** 6 пробников с `UPDATE_ONCE` (36 отрисовок на старте) и SSR с 64 шагами на кадр — цена на GTX 1660 не мерилась; переключатель качества для SSR и числа пробников — этап 12, сейчас это только константы в коде.
+  - **Отдельные «мокрые» пятна в кадре — не лужи.** В кадрах есть тёмные многоугольники с прямыми краями (заплатки земли `floor_dirt.tres` этапа 4 и тени реквизита) — их я не трогал, они не вода.
+  - **Старый код плоскостей оставлен** под `LEGACY_PUDDLE_PLANES := false`, `mat_puddle_water` и `water_ripples` живы только для него.
+- How to verify:
+  - `build.ps1 -Import`, затем `build.ps1 -Test` → `[OK] TEST: TEST DONE escaped=true`, в логе `PUDDLES decals=31 legacy=false`, `PUDDLES torch_lit=2`, `REFLECT probes=6 ssr=true`.
+  - `SHOT_STAGE=stage5 godot --path . -- --mission --photo-tour` → 10 PNG в `_screenshots/stage5/`; ключевой — `spot_01_torch_puddle.png` (лужа у стены стартового зала, пятно лежит в полу, у героя чистые сапоги).
+  - A/B старого поведения: поставить `LEGACY_PUDDLE_PLANES := true` в `scripts/dungeon.gd` и сравнить кадры.
+  - Пересборка текстур: `godot --headless --path . --script res://src
+- Screenshots (кадры я просматривал, изображения в этом окружении читаются):
+  - `_screenshots/stage5/spot_01_torch_puddle.png` … `spot_10_cistern_area.png` (10 кадров).
+  - Вне репозитория (`tools/` в .gitignore): микростенды `tools/shot_micro.png`, `tools/shot_orm.png`, A/B-линейка `tools/shot_ab_*.png`, проверка `tools/shot_check_on.png` / `shot_check_off.png`, виды луж `tools/shot_view_*.png`, кадр у стены старта `tools/shot_spot.png`.
+
+### Acceptance criteria (Stage 5)
+
+| # | Criterion | Result | How checked |
+|---|---|---|---|
+| 1 | No floating water planes remain visible | **PASS** | В логе автотеста `PUDDLES decals=31 legacy=false` — код плоскостей под выключенным флагом, в дереве остались только `Decal`. На `_screenshots/stage5/spot_01_torch_puddle.png` и `spot_05_floor_closeup.png` парящих пятен нет (сравнение с `_screenshots/stage4/`). |
+| 2 | Puddles follow the cobblestones (projected, not planes), irregular soft edges | **PASS** | Декаль проецируется в AABB 1.5×0.4×1.5 с центром 0.1 м над полом и повторяет рельеф плит; форму задаёт альфа маски из трёх сливающихся пятен. На микростенде (`tools/shot_micro.png`) пятно повторяет стыки коббла, на контрольной маджента-декали видно, как кладка «пробивает» пятно в швах. |
+| 3 | Torches/lights produce visible highlights/reflections in puddles | **PARTIAL** | `ssr_enabled=true` (64 шага) и 6 пробников `UPDATE_ONCE` (в логе `REFLECT probes=6 ssr=true`), `puddle_orm.png` даёт шероховатость 0.02 → в ближнем кадре `tools/shot_spot.png` у лужи видны тёмное тело и светлый блик от ближнего света. В общем плане отражение факела почти не читается: измеренный вклад лужи (кадр с лужами и без) `mean_diff=0.011`, изменено `6.75 %` пикселей. Глянец в полную силу — после этапа 6 (свет/экспозиция); критерий закрыт не полностью. |
+| 4 | Puddles do not appear on the dwarf or on walls | **PASS** | Герой и стражи переведены на визуальный слой 2 (`ModelUtil.CHARACTER_LAYER`), у лужи `cull_mask = 1`. Прямой A/B на одном стенде: два гнома в маджента-декали — у левого (`cull_mask = 1`) сапоги, руки и одежда чистые, у правого (`cull_mask = 3`) те же места закрашены. От стен защищает `normal_fade = 0.5` и глубина коробки: центр 0.1 м, size.y = 0.4 → проекция дотягивается максимум до ~0.3 м над полом. |
+| 5 | Test suite green, no script errors | **PASS** | `build.ps1 -Test` → `[OK] TEST: TEST DONE escaped=true`; в кадровом прогоне `[LEAK_TEST] LEAK_TEST_REPORT reachable_cells=432 HOLES=0 LEAKS=0`. Предупреждения `RID allocations … leaked at exit` были и до этапа (сверено с прогоном до правок). |
