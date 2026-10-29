@@ -72,16 +72,27 @@ func _environment() -> Environment:
 	env.glow_hdr_threshold = 1.0
 	for i in 7:
 		env.set_glow_level(i, 1.0 if i in [2, 3, 4] else 0.0)
-	# Туман — как был у Dungeon до этапа 6; его настраивает этап 7.
+	# Дальний туман (этап 7): почти чёрный, прячет повтор кладки и концы
+	# коридоров. Светлее — картинка становится молочной.
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.085, 0.09, 0.115)
-	env.fog_density = 0.009
+	env.fog_light_color = Color(0.03, 0.03, 0.035)
+	env.fog_density = 0.01
+	env.fog_sky_affect = 0.0
+	# Объёмный туман (этап 7): светлое альбедо — воздух подсвечивают только
+	# факелы (у них light_volumetric_fog_energy), сам по себе он едва
+	# светится холодной эмиссией. Анизотропия вперёд — ореол у огня.
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.01
-	env.volumetric_fog_albedo = Color(0.12, 0.1, 0.08)
-	env.volumetric_fog_emission_energy = 0.0
-	env.volumetric_fog_anisotropy = 0.45
+	env.volumetric_fog_density = 0.025
+	env.volumetric_fog_albedo = Color(0.85, 0.82, 0.78)
+	env.volumetric_fog_emission = Color(0.01, 0.012, 0.018)
+	env.volumetric_fog_emission_energy = 1.0
+	env.volumetric_fog_anisotropy = 0.4
 	env.volumetric_fog_length = 40.0
+	env.volumetric_fog_detail_spread = 2.0
+	env.volumetric_fog_gi_inject = 0.5
+	env.volumetric_fog_ambient_inject = 0.1
+	env.volumetric_fog_temporal_reprojection_enabled = true
+	env.volumetric_fog_temporal_reprojection_amount = 0.9
 	env.adjustment_enabled = true
 	env.adjustment_contrast = 1.08
 	env.adjustment_saturation = 0.92

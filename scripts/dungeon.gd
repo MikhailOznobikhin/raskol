@@ -45,6 +45,15 @@ const PUDDLE_LIFT := 0.1
 ## синими пятнами. Код оставлен под флагом для A/B-сравнения; включённые
 ## узлы уходят в скрытый _deprecated, а не удаляются.
 const LEGACY_PUDDLE_PLANES := false
+## Низкая дымка над мокрым полом (этап 7): общий FogMaterial и высота
+## коробки. Тоньше 1 м объём мерцает в сетке объёмного тумана.
+const MIST_MATERIAL := "res://materials/fog_ground_mist.tres"
+const MIST_HEIGHT := 1.0
+## Пыль в воздухе (этап 7): одна сцена и для луча из свода, и для камеры.
+const DUST_SCENE := "res://scenes/fx/dust_motes.tscn"
+## Эффекты воздуха этапа 7 — переключатели для будущего меню качества:
+## mist — дымка над водой, dust — пыль, post — виньетка и зерно (Cam3D).
+static var air_fx := {"mist": true, "dust": true, "post": true}
 
 var lines: Array = []
 var map_w := 0
@@ -110,6 +119,8 @@ var mat_dirt: Material
 ## Поставленные лужи-декали: чтобы не класть два пятна в одну точку.
 var puddles: Array[Node3D] = []
 var _puddle_packed: PackedScene
+## Коробки низкой дымки (этап 7).
+var mist_volumes: Array[FogVolume] = []
 
 
 func _ready() -> void:
@@ -140,6 +151,8 @@ func build() -> void:
 	_build_environment()
 	_build_reflection_probes()
 	_add_atmosphere()
+	_add_wet_mist()
+	_add_camera_dust()
 	print("PUDDLES decals=", puddles.size(), " legacy=", LEGACY_PUDDLE_PLANES)
 
 
@@ -1118,6 +1131,14 @@ static func make_world_environment() -> WorldEnvironment:
 	return we
 
 
+## Включён ли эффект воздуха. AIR_FX_OFF=mist,dust,post — быстро выключить
+## на отладке без правки кода (как DUNGEON_GI).
+static func air_fx_on(kind: String) -> bool:
+	if kind in OS.get_environment("AIR_FX_OFF").split(","):
+		return false
+	return air_fx.get(kind, true)
+
+
 ## Скрытый контейнер для снятых узлов: не рисуется и не обрабатывается.
 func _deprecated_root() -> Node3D:
 	var node := get_node_or_null("_deprecated") as Node3D
@@ -1222,39 +1243,78 @@ func _add_light_shafts() -> void:
 		_add_dust(center, top)
 
 
-## Пыль в луче: дешёвые частицы на весь объём зала, без оверлея на экран.
+## Пыль в луче: сцена пылинок на объём конуса. До этапа 7 здесь были
+## свои несветящиеся (unshaded) частицы, видимые и в темноте; теперь это
+## та же затеняемая пыль, что у камеры, — светится только в луче.
 func _add_dust(center: Vector3, top: float) -> void:
-	var p := GPUParticles3D.new()
-	p.amount = 24
-	p.lifetime = 9.0
-	p.preprocess = 5.0
-	p.local_coords = true
-	p.visibility_aabb = AABB(Vector3(-3.0, -top, -3.0), Vector3(6.0, top * 2.0, 6.0))
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(1.6, top * 0.32, 1.6)
-	pm.direction = Vector3(0.0, 1.0, 0.0)
-	pm.spread = 35.0
-	pm.initial_velocity_min = 0.02
-	pm.initial_velocity_max = 0.09
-	pm.gravity = Vector3(0.0, -0.01, 0.0)
-	pm.scale_min = 0.4
-	pm.scale_max = 1.5
-	pm.color = Color(0.85, 0.82, 0.72, 0.55)
-	p.process_material = pm
-	var quad := QuadMesh.new()
-	quad.size = Vector2(0.035, 0.035)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	mat.vertex_color_use_as_albedo = true
-	mat.albedo_texture = _radial_glow_texture()
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.55)
-	quad.material = mat
-	p.draw_pass_1 = quad
+	var p := _dust_motes()
+	if p == null:
+		return
+	p.amount = 40
+	p.set("box_size", Vector3(3.2, top * 0.64, 3.2))
 	p.position = center + Vector3(0, top * 0.5, 0)
 	add_child(p)
+
+
+## Пыль вокруг активной камеры: коробка 12×4×12 м едет за камерой, а
+## пылинки висят в мире. Одна на уровень — дешевле, чем по сцене на зал.
+func _add_camera_dust() -> void:
+	var p := _dust_motes()
+	if p == null:
+		return
+	p.name = "CameraDust"
+	p.set("follow_camera", true)
+	add_child(p)
+
+
+func _dust_motes() -> GPUParticles3D:
+	if not air_fx_on("dust"):
+		return null
+	if not ResourceLoader.exists(DUST_SCENE):
+		push_warning("нет сцены пыли " + DUST_SCENE)
+		return null
+	var p := (load(DUST_SCENE) as PackedScene).instantiate() as GPUParticles3D
+	p.add_to_group("fx_dust")
+	return p
+
+
+## Низкая дымка над мокрыми местами: лужи ближе MIST_JOIN м друг к другу
+## накрываются одной коробкой, чтобы не плодить мелкие объёмы.
+func _add_wet_mist() -> void:
+	if not air_fx_on("mist"):
+		print("MIST volumes=0 (off)")
+		return
+	const MIST_JOIN := 5.0
+	const MIST_MARGIN := 2.0
+	var groups: Array[Rect2] = []
+	for puddle in puddles:
+		var at := Vector2(puddle.position.x, puddle.position.z)
+		var joined := false
+		for i in groups.size():
+			if groups[i].grow(MIST_JOIN).has_point(at):
+				groups[i] = groups[i].expand(at)
+				joined = true
+				break
+		if not joined:
+			groups.append(Rect2(at, Vector2.ZERO))
+	for r in groups:
+		var g := r.grow(MIST_MARGIN)
+		_add_ground_mist(Vector3(g.get_center().x, 0.0, g.get_center().y), g.size)
+	print("MIST volumes=", mist_volumes.size())
+
+
+## Коробка дымки у пола: плотность спадает с высотой (height_falloff в
+## материале), края растворяются (edge_fade).
+func _add_ground_mist(center: Vector3, size_xz: Vector2) -> void:
+	var fv := FogVolume.new()
+	fv.name = "GroundMist"
+	fv.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	fv.size = Vector3(size_xz.x, MIST_HEIGHT, size_xz.y)
+	fv.material = load(MIST_MATERIAL)
+	fv.position = Vector3(center.x, center.y + MIST_HEIGHT * 0.5, center.z)
+	fv.add_to_group("fx_mist")
+	add_child(fv)
+	mist_volumes.append(fv)
 
 
 ## Капель с трещины: одна капля раз в 1.5–4 с. Один частичный узел

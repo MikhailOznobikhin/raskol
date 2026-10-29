@@ -52,6 +52,60 @@ func _measure_fps(spot_name: String) -> void:
 	print("[DebugShots] fps %s avg=%.1f worst_frame_ms=%.1f" % [spot_name, avg_fps, worst / 1000.0])
 
 
+## Бисекция FPS: эффекты этапа 7 выключаются по одному прямо в рантайме,
+## на той же точке, без перезапуска. Строки «fps off_<эффект>» сравнивать
+## с замером точки: прирост FPS — цена эффекта.
+func _bisect_fx() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var vp := get_viewport()
+	var env: Environment = null
+	for we in get_tree().root.find_children("*", "WorldEnvironment", true, false):
+		env = (we as WorldEnvironment).environment
+	for kind in ["post_fx", "fx_dust", "fx_mist", "volfog", "taa", "msaa", "all"]:
+		var restore := _set_fx(kind, false, vp, env)
+		for i in SETTLE_FRAMES:
+			await get_tree().process_frame
+		await _measure_fps("off_" + kind)
+		restore.call()
+
+
+## Выключает эффект и возвращает функцию, которая вернёт как было.
+func _set_fx(kind: String, on: bool, vp: Viewport, env: Environment) -> Callable:
+	match kind:
+		"volfog":
+			if env == null:
+				return func(): pass
+			var was := env.volumetric_fog_enabled
+			env.volumetric_fog_enabled = on and was
+			return func(): env.volumetric_fog_enabled = was
+		"taa":
+			var was := vp.use_taa
+			vp.use_taa = on and was
+			return func(): vp.use_taa = was
+		"msaa":
+			var was := vp.msaa_3d
+			if not on:
+				vp.msaa_3d = Viewport.MSAA_DISABLED
+			return func(): vp.msaa_3d = was
+		"all":
+			var undo: Array[Callable] = []
+			for k in ["post_fx", "fx_dust", "fx_mist", "volfog", "taa", "msaa"]:
+				undo.append(_set_fx(k, on, vp, env))
+			return func():
+				for u in undo:
+					u.call()
+	# группы узлов: виньетка (CanvasLayer), пыль, коробки дымки
+	var nodes := get_tree().get_nodes_in_group(kind)
+	var shown := {}
+	for n in nodes:
+		shown[n] = n.get("visible")
+		n.set("visible", on and shown[n])
+	return func():
+		for n in shown:
+			if is_instance_valid(n):
+				n.set("visible", shown[n])
+
+
 func _run_tour() -> void:
 	_touring = true
 	var stage := OS.get_environment("SHOT_STAGE")
@@ -61,7 +115,8 @@ func _run_tour() -> void:
 	var hidden_layers: Array[CanvasLayer] = []
 	for n in get_tree().root.find_children("*", "CanvasLayer", true, false):
 		var cl := n as CanvasLayer
-		if cl.visible:
+		# пост-эффект (виньетка/зерно) — часть картинки, а не HUD
+		if cl.visible and not cl.is_in_group("post_fx"):
 			cl.visible = false
 			hidden_layers.append(cl)
 	var original_cam := get_viewport().get_camera_3d()
@@ -76,6 +131,8 @@ func _run_tour() -> void:
 	if measure_fps:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		print("[DebugShots] viewport=", get_viewport().get_visible_rect().size)
+	# SHOT_BISECT=1 — на первой точке ещё и цена каждого эффекта этапа 7
+	var bisect := OS.get_environment("SHOT_BISECT") == "1"
 	for spot in get_tree().get_nodes_in_group("photo_spot"):
 		if spot is Node3D:
 			cam.global_transform = (spot as Node3D).global_transform
@@ -85,6 +142,9 @@ func _run_tour() -> void:
 			_save_shot("res://_screenshots/" + stage, spot.name)
 			if measure_fps:
 				await _measure_fps(spot.name)
+			if bisect:
+				bisect = false
+				await _bisect_fx()
 	cam.queue_free()
 	if original_cam:
 		original_cam.make_current()
