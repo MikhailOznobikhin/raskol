@@ -7,6 +7,10 @@ const POOL_SIZE := 14
 ## одновременно, а лишние узлы слушателя только нагружают.
 const POOL_3D_SIZE := 10
 const LISTEN_RANGE := 26.0
+## Слой физики «audio_zones»: на нём только Area3D реверба комнат (этап 10).
+## Каждый AudioStreamPlayer3D, которому нужно эхо комнаты, смотрит в этот слой
+## через area_mask — иначе зоны ловили бы хитбоксы и триггеры на слое 1.
+const AUDIO_ZONE_MASK := 1 << 5
 
 var _pool: Array[AudioStreamPlayer] = []
 var _pool3d: Array[AudioStreamPlayer3D] = []
@@ -20,12 +24,13 @@ var muted := false
 func _ready() -> void:
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
-		p.bus = "Master"
+		p.bus = "SFX"
 		add_child(p)
 		_pool.append(p)
 	for i in POOL_3D_SIZE:
 		var p := AudioStreamPlayer3D.new()
-		p.bus = "Master"
+		p.bus = "SFX"
+		p.area_mask = AUDIO_ZONE_MASK
 		# без явного радиуса стража слышна из другого конца уровня;
 		# в Godot 4.4 опорная дистанция называется unit_size, а не distance_ref
 		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
@@ -38,7 +43,8 @@ func _ready() -> void:
 func _stream(name: String) -> AudioStream:
 	if _cache.has(name):
 		return _cache[name]
-	var path := DIR + name + ".wav"
+	# Звуки этапа 10 лежат в res://audio/ и передаются полным путём.
+	var path := name if name.begins_with("res://") else DIR + name + ".wav"
 	if not ResourceLoader.exists(path):
 		return null
 	var s: AudioStream = load(path)
@@ -93,6 +99,7 @@ func loop(name: String, volume_db := -8.0, fade := 0.6) -> AudioStreamPlayer:
 	if s == null:
 		return null
 	var p := AudioStreamPlayer.new()
+	p.bus = "Music" if name.begins_with("music_") else "Ambience"
 	if s is AudioStreamWAV:
 		var wav := s as AudioStreamWAV
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD

@@ -1,8 +1,10 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=28 format=3]
 
 [ext_resource type="Material" path="res://materials/iron.tres" id="1_oappy"]
 [ext_resource type="Material" path="res://materials/wood_planks.tres" id="2_mvr0m"]
 [ext_resource type="Script" path="res://scenes/props/torch_flicker.gd" id="3_715gs"]
+[ext_resource type="AudioStream" path="res://audio/ambience/torch_crackle.wav" id="4_crk"]
+[ext_resource type="Script" path="res://scenes/props/torch_crackle.gd" id="5_crk"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_phs1q"]
 size = Vector3(0.28, 0.46, 0.08)
@@ -198,3 +200,12 @@ distance_fade_length = 8.0
 omni_range = 7.0
 omni_attenuation = 1.5
 script = ExtResource("3_715gs")
+
+[node name="Crackle" type="AudioStreamPlayer3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0.3)
+stream = ExtResource("4_crk")
+volume_db = -8.0
+unit_size = 2.0
+max_distance = 10.0
+bus = &"SFX"
+script = ExtResource("5_crk")

@@ -66,6 +66,9 @@ if ($Assets) {
     # процедурного генератора, иначе он перезапишет их старыми версиями.
     & $py (Join-Path $ws 'src\audio\build_audio_samples.py')
     if ($LASTEXITCODE -ne 0) { throw 'Генераторы ассетов упали' }
+    # Атмосфера этапа 10: res://audio/ (синтез + CC0-шаги Kenney из tools\cc0).
+    & $py (Join-Path $ws 'src\audio\build_ambience.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Генераторы ассетов упали' }
     Write-Host '[OK] Ассеты перегенерированы' -ForegroundColor Green
 }
 
