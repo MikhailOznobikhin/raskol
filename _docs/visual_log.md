@@ -52,3 +52,28 @@
   - Confirm API unchanged: `target`, `yaw`, `pitch`, `sensitivity`, `spring`, `camera`, `shake()`, `cam_h`, `follow`, `follow_ready`, `global_position` all still present and functional.
 - Screenshots:
   - Generated with `godot --headless --path . -- --shots` (worktree `.worktree-visual-stage2`): 13 PNGs in `res://tools/` (`shot_3d_01.png` through `shot_3d_vault.png`, `shot_3d_inventory*.png`, `shot_3d_settings.png`, `shot_3d_run.png`). Images cannot be viewed directly in this environment — see PNG file sizes in the log.
+- ## Stage 3
+- Stage number: 3 (Option B: real texel density + walls/vault from the kit + vault cove)
+- Branch: `visual/stage-3`
+- Files changed:
+  - `scripts/dungeon.gd` (only code file): `_fix_kit_uv()`, `_scale_surface_uv()`, `_brick_material_uv()`, `_build_wall_veneer()`, `_kit_multimesh()`, `_build_cove()`, `_cove_strip()`, `_column_material()` added; `_build_ceiling()` now emits metric UVs; `_build_walls()` places kit veneer; `_build_piers()` uses kit brick; `_arched_doorway()` aligned to nearest wall; soot decals clamped below the cove
+  - `_docs/stage3_report.md` (§10-бис correction, §11 implementation)
+  - `_docs/visual_log.md` (this entry)
+- Node paths added at runtime (children of `Dungeon`):
+  - `Dungeon/Walls_wall_2m` (MultiMeshInstance3D, 259 instances)
+  - `Dungeon/Walls_wall_2m_b` (MultiMeshInstance3D, 207 instances)
+  - `Dungeon/VaultCove` (MeshInstance3D, only when the kit is missing)
+- Property values set:
+  - `COVE_R := 1.0`, `COVE_SEG := 6`, `WALL_SHIFT := -1.901`
+  - kit UV multipliers: `floor_4m` 512/346 = 1.48, `arch_2m(_b)` 512/134 = 3.82, `wall_4m/_b`, `wall_2m/_b` 512/140 = 3.66; all kit materials `cull_mode = CULL_BACK`
+  - `mat_brick` `uv1_scale` 1.0 → 0.25; `mat_wall` 0.4 → 0.5; `mat_floor` 0.45 → 0.5; `mat_cap` 0.9 → 0.5
+  - `mat_ceil = mat_vault = _brick_material_uv(0.25)` (pack Brick_Walls atlas at 512 px/m)
+  - column material `uv1_scale = Vector3(TAU*r*0.25, h*0.25, 1.0)`, `uv1_triplanar = false`
+  - soot decal height `clampf(light.y + 0.55, 2.2, WALL_H - COVE_R - 0.55)`
+- Verified:
+  - `build.ps1 -Test` → `[OK] TEST: TEST DONE escaped=true`; `FLOOR kit tiles=461`, `WALLS veneer straight=259 mirrored=207`, `ARCHES kit=29`, `PIERS cylinders=16`
+  - `build.ps1 -Shots` → 14 PNGs in `tools/`; downscaled copies inspected: walls are pack masonry with the pack's curved shoulder into the ceiling, ceiling is the same masonry at the same scale, no course fanning on columns
+- What could NOT do and why:
+  - The pack has no ceiling/vault-span module (`Brick_wall`, `Brick_wall_corner`, `Brick_wall_doorway`, `Tile_floor`, `Sand`, torch chest only), so the flat ceiling above the 5060 m² hall is still procedural; a real barrel vault over the span needs a `ceil_h` profile per bay (separate task).
+  - `_build_ribs()` still unused; no UV2/lightmaps (dynamic lights only).
+- To verify: run `build.ps1 -Test` then `build.ps1 -Shots`, open `tools/shot_3d_wall.png`, `tools/shot_3d_vault.png`, `tools/shot_3d_cistern.png`.

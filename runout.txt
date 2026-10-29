@@ -1,0 +1,20 @@
+﻿Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
+
+Godot_v4.4.1-stable_win64_console.exe : ERROR: Failed to read the root certificate store.
+At line:1 char:131
++ ... alappdata"; & "C:\Users\mixao\myproject\game\tools\godot\Godot_v4.4.1 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: Failed t...tificate store.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2289)
+SCRIPT ERROR: Parse Error: Could not resolve class "Hero3D", because of a parser error.
+   at: GDScript::reload (res://scripts/main3d.gd:344)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "hero" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://scripts/main3d.gd:344)
+SCRIPT ERROR: Parse Error: Could not resolve class "Hero3D", because of a parser error.
+   at: GDScript::reload (res://scripts/main3d.gd:423)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "hero" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://scripts/main3d.gd:423)
+ERROR: Failed to load script "res://scripts/main3d.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:3022)

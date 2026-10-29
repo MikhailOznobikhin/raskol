@@ -1,0 +1,72 @@
+func _build_collision() -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	add_child(body)
+
+	var floor_shape := BoxShape3D.new()
+	floor_shape.size = Vector3(map_w * T, 0.6, map_h * T)
+	var floor_col := CollisionShape3D.new()
+	floor_col.shape = floor_shape
+	floor_col.position = Vector3(map_w * T * 0.5, -0.3, map_h * T * 0.5)
+	body.add_child(floor_col)
+
+	# Стены получают коробки по видимой кладке; колонны — отдельные цилиндры.
+	# Своды и верхняя часть колонн остаются без коллизии.
+	for d in SIDES:
+		var t := Vector2i(-d.y, d.x)
+		var used := {}
+		for y in map_h:
+			for x in map_w:
+				var c := Vector2i(x, y)
+				if used.has(c) or not _wall_face_open(x, y, d):
+					continue
+				var run: Array[Vector2i] = [c]
+				used[c] = true
+				var next: Vector2i = c + t
+				while _in(next.x, next.y) and not used.has(next) \
+						and _wall_face_open(next.x, next.y, d):
+					run.append(next)
+					used[next] = true
+					next += t
+				_face_collision(body, run, d)
+	for p0 in piers:
+		var p: Dictionary = p0
+		var radius: float = minf(float(p["rx"]), float(p["rz"])) * 0.62
+		var footprint: float = radius * 2.12 * 1.06
+		var base_h := 0.35
+		var base_shape := BoxShape3D.new()
+		base_shape.size = Vector3(footprint, base_h, footprint)
+		var base_col := CollisionShape3D.new()
+		base_col.shape = base_shape
+		base_col.position = Vector3(p["pos"].x, base_h * 0.5 - 0.05, p["pos"].z)
+		body.add_child(base_col)
+		var shape := CylinderShape3D.new()
+		shape.radius = radius * 1.08
+		shape.height = COL_H
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		col.position = p["pos"] + Vector3(0, COL_H * 0.5, 0)
+		body.add_child(col)
+	# косяки и переклад арок: без них игрок проходит сквозь камень арки
+	for a0 in arches:
+		var a: Dictionary = a0
+		var c: Vector2i = a["cell"]
+		var d: Vector2i = a["d"]
+		var center := cell_center(c.x, c.y)
+		# ось кладки арки — вдоль стены, то есть поперёк нормали d
+		var along := Vector3(-d.y, 0.0, d.x)
+		var nx := absf(along.x)
+		var nz := absf(along.z)
+		for s in [-1.0, 1.0]:
+			var off: Vector3 = along * (ARCH_HALF + ARCH_JAMB * 0.5) * s
+			_box_collision(body, Vector3(
+				nx * ARCH_JAMB + (1.0 - nx) * T, WALL_H,
+				nz * ARCH_JAMB + (1.0 - nz) * T),
+				Vector3(center.x + off.x, WALL_H * 0.5, center.z + off.z))
+		_box_collision(body, Vector3(
+			nx * ARCH_HALF * 2.0 + (1.0 - nx) * T, WALL_H - ARCH_TOP,
+			nz * ARCH_HALF * 2.0 + (1.0 - nz) * T),
+			Vector3(center.x, (WALL_H + ARCH_TOP) * 0.5, center.z))
+
+
+## Грань клетки-камня, обращённая в проходимую клетку.

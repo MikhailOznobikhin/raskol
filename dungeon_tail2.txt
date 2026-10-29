@@ -1,0 +1,400 @@
+﻿		if l == null or not is_instance_valid(l):
+			continue
+		var lp := _light_world_position(l)
+		var r := l.omni_range
+		var dist := lp.distance_to(sample)
+		if dist > r:
+			continue
+		if not _light_clear(lp, sample):
+			continue
+		var fall: float = pow(clampf(1.0 - dist / maxf(r, 0.1), 0.0, 1.0), 0.9)
+		total += 35.0 * fall
+	return clampf(total, 0.0, 100.0)
+
+
+func _light_clear(from: Vector3, to: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.collision_mask = 1
+	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## Р?С?Р?С╪Р?С<Р№ РїС?Р?С'Р? (arched doorway) РёР· Р?Р°Р+Р?С?Р°: Р?Р°С?С'Р?С?С%Р°С? РєР>Р°Р?С'Р?Р°С? Р°С?РєР° Р?Р?РчС?С'Р?
+## С'С?С'С: РєР?С?Р?Р+Р?Рє. Р?Р?Р?С?Р>С? С?С'Р?РёС' Р>РёС┼Р?Р? Р?Р° z=0 Рё С?С:Р?Р?РёС' Р? +Z, РїР?С?С'Р?Р?С? С┼РчР?С'С?С?РчР? РчР?Р?
+## Р?Р° Р?С'РєС?С<С'Р?Р№ РєР>РчС'РєРч. Р?Р?Р>Р>РёР·РёРё Р?РчС': РїР?С?С'Р°Р> Р?РчРєР?С?Р°С'РёР?Р?С<Р№.
+func _arched_doorway(pos: Vector3) -> void:
+	var mesh: Mesh = _kit_mesh("arch_2m", false)
+	if mesh == null:
+		var aroot := Node3D.new()
+		aroot.position = pos
+		add_child(aroot)
+		_box(Vector3(0.4, 3.0, 0.6), Vector3(-1.2, 1.5, 0), mat_wall, aroot)
+		_box(Vector3(0.4, 3.0, 0.6), Vector3(1.2, 1.5, 0), mat_wall, aroot)
+		_box(Vector3(2.8, 0.5, 0.6), Vector3(0, 2.75, 0), mat_wall, aroot)
+		return
+	var c := _nearest_open_cell(pos)
+	var root := Node3D.new()
+	root.position = cell_center(c.x, c.y) + Vector3(0.0, 0.0, -1.07)
+	add_child(root)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	root.add_child(mi)
+
+
+func _prop(type: String, pos: Vector3) -> void:
+	match type:
+		"torch":
+			# Р'С'Р?С?Р?Р№ С"Р°РєРчР> Р? С'С?С'С: Р?РчС'С?Р°С: Р?С' РїРчС?Р?Р?Р?Р? С'Р?Р>С?РєР? РїРчС?РчС?Р?РчС╪РёР?Р°РчС'
+			# РєР?Р?Р?Р°С'С? Рё С?С?РчР?Р°РчС' С'РчР?РчР?Р?Р№ Р+С?Р?РРчС'.
+			if _light_near(pos, 3.2):
+				return
+			# С? С?С'РчР?С< в?" Р?Р°С?С'РчР?Р?С<Р№ С"Р°РєРчР> РёР· Р?Р°Р+Р?С?Р°, Р? Р·Р°Р>Рч Р+РчР· С?С'РчР?С< в?" Р?Р°РїР?Р>С?Р?С<Р№
+			if not _wall_torch_near(pos):
+				_torch(pos)
+		"brazier", "forge_fire":
+			_brazier_prop(pos)
+		"barrel":
+			_cyl(0.4, 1.0, pos + Vector3(0, 0.5, 0), mat_wood)
+			_cyl(0.44, 0.08, pos + Vector3(0, 0.25, 0), mat_metal)
+			_cyl(0.44, 0.08, pos + Vector3(0, 0.75, 0), mat_metal)
+		"crate":
+			_box(Vector3(0.9, 0.9, 0.9), pos + Vector3(0, 0.45, 0), mat_wood)
+		"table":
+			_box(Vector3(1.8, 0.1, 0.9), pos + Vector3(0, 0.9, 0), mat_wood)
+			for dx in [-0.75, 0.75]:
+				for dz in [-0.35, 0.35]:
+					_box(Vector3(0.1, 0.9, 0.1), pos + Vector3(dx, 0.45, dz), mat_wood)
+		"anvil":
+			_box(Vector3(1.0, 0.4, 0.5), pos + Vector3(0, 0.6, 0), mat_metal)
+			_box(Vector3(0.5, 0.4, 0.4), pos + Vector3(0, 0.2, 0), mat_metal)
+		"ore_cart":
+			_box(Vector3(1.6, 0.8, 1.0), pos + Vector3(0, 0.6, 0), mat_metal)
+			for dx in [-0.55, 0.55]:
+				var w := _cyl(0.35, 0.12, pos + Vector3(dx, 0.35, 0.5), mat_metal)
+				w.rotation_degrees = Vector3(90, 0, 0)
+		"gate", "cell_door":
+			var root2 := Node3D.new()
+			root2.position = pos + Vector3(0, 0, 0)
+			add_child(root2)
+			for i in 5:
+				_box(Vector3(0.1, 3.0, 0.1), Vector3(-0.8 + i * 0.4, 1.5, 0), mat_metal, root2)
+			_box(Vector3(1.9, 0.12, 0.12), Vector3(0, 1.1, 0), mat_metal, root2)
+			_box(Vector3(1.9, 0.12, 0.12), Vector3(0, 2.4, 0), mat_metal, root2)
+			var body := StaticBody3D.new()
+			var cs := CollisionShape3D.new()
+			var bs := BoxShape3D.new()
+			bs.size = Vector3(1.9, 3.0, 0.3)
+			cs.shape = bs
+			cs.position = Vector3(0, 1.5, 0)
+			body.add_child(cs)
+			root2.add_child(body)
+		"chain":
+			_chain_prop(pos)
+		"refuse":
+			for i in 6:
+				_sphere(0.25 + randf() * 0.12, pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.5, 0.5)), mat_dark)
+		"stairs":
+			# Р?С?Р?С?С'С<Рч РєС?Р+С< С? С'РчРєС?С'С?С?Р?Р№ РєРёС?РїРёС╪Р°: С?С'С?РїРчР?С? в?" С?РїР>Р?С?Р?Р?Р№ Р+Р>Р?Рє Р?С' РїР?Р>Р°,
+			# Р+РчР· Р?С'Р?РчР>С?Р?С<С: РїС?Р?С?С'С?РїРчР№ РёР· С'С'С?Р°Р?Р?Р?Р? РєР°Р?Р?С?.
+			for i in 5:
+				var top: float = 0.22 * float(i + 1)
+				_box(Vector3(2.0, top, 0.5),
+					pos + Vector3(0, top * 0.5, -i * 0.5), mat_brick)
+		"banner":
+			_banner_prop(pos)
+		"arch":
+			_arched_doorway(pos)
+		"pillar":
+			# РЎС'Р?Р?Р> в?" CylinderMesh С? С'РчРєС?С'С?С?Р?Р№ РєРёС?РїРёС╪Р°, Р+Р°Р·Р° Рё РєР°РїРёС'РчР>С? в?" РєС?Р+С<.
+			# Р'С<С?Р?С'Р° РїР?Р?Р?Р?Р?С?РчС'С?С? РїР?Р? С?Р?Р?Р? Р?Р°Р? РєР>РчС'РєР?Р№: РёР?Р°С╪Рч Р? Р·Р°Р>Рч РєР?Р>Р?Р?Р?Р°
+			# РєР?С?Р?С'РєР°С? Рё Р?РёС?С?С%Р°С?, Р° Р? РєР?С?РёР?Р?С?Рч РїС?Р?С'С<РєР°РчС' РїР?С'Р?Р>Р?Рє.
+			var ph: float = cell_ceil(int(floor(pos.x / T)), int(floor(pos.z / T)))
+			_cyl(0.4, ph - 0.5, pos + Vector3(0, ph * 0.5, 0), mat_brick)
+			_box(Vector3(1.1, 0.24, 1.1), pos + Vector3(0, 0.12, 0), mat_brick)
+			_box(Vector3(0.98, 0.16, 0.98), pos + Vector3(0, 0.32, 0), mat_brick)
+			_box(Vector3(0.98, 0.16, 0.98), pos + Vector3(0, ph - 0.4, 0), mat_brick)
+			_box(Vector3(1.14, 0.24, 1.14), pos + Vector3(0, ph - 0.16, 0), mat_brick)
+		"shelf":
+			_box(Vector3(1.4, 1.9, 0.45), pos + Vector3(0, 0.95, 0), mat_wood)
+			for i in 3:
+				_box(Vector3(1.25, 0.05, 0.4), pos + Vector3(0, 0.5 + i * 0.55, 0.03), mat_metal)
+				_box(Vector3(0.3, 0.25, 0.25), pos + Vector3(-0.35 + i * 0.35, 0.65 + i * 0.55, 0.05), mat_wood)
+		"bed":
+			_box(Vector3(1.9, 0.32, 0.85), pos + Vector3(0, 0.16, 0), mat_wood)
+			var straw := _box(Vector3(1.75, 0.12, 0.7), pos + Vector3(0, 0.36, 0), mat_wood)
+			straw.material_override = mat_metal
+			_box(Vector3(0.5, 0.16, 0.7), pos + Vector3(-0.6, 0.46, 0), mat_wood)
+		"rubble":
+			for i in 7:
+				_sphere(0.12 + randf() * 0.14, pos + Vector3(randf_range(-0.7, 0.7), 0.1, randf_range(-0.7, 0.7)), mat_wall)
+		"rack":
+			_box(Vector3(1.2, 0.12, 0.4), pos + Vector3(0, 0.06, 0), mat_wood)
+			for i in 3:
+				_cyl(0.03, 1.7, pos + Vector3(-0.35 + i * 0.35, 0.85, 0), mat_metal)
+			_box(Vector3(1.2, 0.1, 0.35), pos + Vector3(0, 1.55, 0), mat_metal)
+		"lever":
+			# Р С<С╪Р°Р?, Р° Р?Рч С?С'Р?Р>Р+ С? РїР°С?С?С%РёР? С?Р°С?Р?Р?: РїР>РёС'Р°, С?С'Р?Р№РєР°, С?Р°С?Р?РёС? Рё
+			# Р?Р°РєР>Р?Р?Р?Р°С? С?С?РєР?С?С'С?. РЎР?РчС'С?С%РёР№С?С? С?Р°С? Р?Р° РїР°Р>РєРч С╪РёС'Р°Р>С?С? РєР°Рє Р>Р°Р?РїР°.
+			var lroot := Node3D.new()
+			lroot.position = pos
+			add_child(lroot)
+			_cyl(0.34, 0.12, Vector3(0, 0.06, 0), mat_cap, lroot)
+			_cyl(0.09, 0.92, Vector3(0, 0.52, 0), mat_metal, lroot)
+			_box(Vector3(0.24, 0.2, 0.24), Vector3(0, 0.98, 0), mat_metal, lroot)
+			var arm := _cyl(0.05, 0.66, Vector3(0.17, 1.14, 0), mat_metal, lroot)
+			arm.rotation_degrees = Vector3(0, 0, -38)
+			_sphere(0.1, Vector3(0.37, 1.4, 0), mat_metal, lroot)
+		"shelf":
+			for i in 3:
+				_box(Vector3(1.6, 0.06, 0.4), pos + Vector3(0, 0.6 + i * 0.6, 0), mat_wood)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(-0.75, 0.9, 0), mat_wood)
+			_box(Vector3(0.1, 1.8, 0.4), pos + Vector3(0.75, 0.9, 0), mat_wood)
+		"bed":
+			_box(Vector3(1.9, 0.35, 1.0), pos + Vector3(0, 0.2, 0), mat_wood)
+			_box(Vector3(1.9, 0.1, 1.0), pos + Vector3(0, 0.42, 0), mat_wood)
+			_box(Vector3(0.6, 0.25, 1.0), pos + Vector3(-0.65, 0.55, 0), mat_wood)
+		"rubble":
+			for i in 8:
+				_sphere(0.18 + randf() * 0.12, pos + Vector3(randf_range(-0.6, 0.6), 0.12, randf_range(-0.6, 0.6)), mat_dark)
+		"brazier_stand":
+			_cyl(0.12, 1.6, pos + Vector3(0, 0.8, 0), mat_metal)
+			var bowl := _cyl(0.35, 0.2, pos + Vector3(0, 1.65, 0), mat_metal)
+			var coals := _sphere(0.25, pos + Vector3(0, 1.75, 0), mat_glow)
+			coals.scale = Vector3(1, 0.4, 1)
+			var light := OmniLight3D.new()
+			light.light_color = Color(1.0, 0.69, 0.43)
+			light.light_energy = 2.8
+			light.omni_range = 8.5
+			light.shadow_enabled = true
+			light.position = pos + Vector3(0, 1.9, 0)
+			add_child(light)
+			lights.append({"light": light, "base": 2.8, "seed": randf() * 10.0, "flame": coals})
+		"weapon_rack":
+			_box(Vector3(1.6, 0.1, 0.3), pos + Vector3(0, 1.2, 0), mat_wood)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(-0.7, 0.7, 0), mat_wood)
+			_box(Vector3(0.1, 1.4, 0.1), pos + Vector3(0.7, 0.7, 0), mat_wood)
+			for i in 3:
+				_box(Vector3(0.06, 0.7, 0.06), pos + Vector3(-0.4 + i * 0.4, 0.85, 0.1), mat_metal)
+		"puddle", "cistern_pool":
+			var puddle := Node3D.new()
+			puddle.position = pos + Vector3(0, 0.025, 0)
+			add_child(puddle)
+			var q := MeshInstance3D.new()
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(5.2, 3.8) if type == "cistern_pool" \
+				else Vector2(2.2, 1.7)
+			q.mesh = pm
+			q.material_override = mat_puddle_water
+			q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			puddle.add_child(q)
+
+			var ripple_mesh := TorusMesh.new()
+			ripple_mesh.inner_radius = 0.19
+			ripple_mesh.outer_radius = 0.22
+			ripple_mesh.rings = 32
+			ripple_mesh.ring_segments = 6
+			var ripple := MeshInstance3D.new()
+			ripple.mesh = ripple_mesh
+			ripple.position.y = 0.012
+			ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var ripple_mat := StandardMaterial3D.new()
+			ripple_mat.albedo_color = Color(0.72, 0.88, 0.94, 0.32)
+			ripple_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			ripple_mat.metallic = 0.15
+			ripple_mat.roughness = 0.2
+			ripple.material_override = ripple_mat
+			puddle.add_child(ripple)
+			water_ripples.append({
+				"mesh": ripple,
+				"material": ripple_mat,
+				"seed": randf(),
+			})
+		_:
+			pass
+
+func _build_props() -> void:
+	var txt := FileAccess.get_file_as_string("res://assets/level/m1_props.json")
+	var data = JSON.parse_string(txt)
+	if not (data is Dictionary):
+		return
+	for p0 in data.get("props", []):
+		var p: Dictionary = p0
+		var type: String = p.get("type", "")
+		if type in ["bones", "straw_bed", "bucket", "winch", "bars"]:
+			continue
+		var pos := Vector3(float(p.get("x", 0)) / 32.0 * T, 0.0, float(p.get("y", 0)) / 32.0 * T)
+		# Р"Р?РчС?Рё, Р?Р?С?Р?С'Р°, С?С<С╪Р°Р? Рё Р>РчС?С'Р?РёС┼Р° РїС?РёР?С?Р·Р°Р?С< Рє РєР?Р?С?Р?РёР?Р°С'Р°Р? С?Р?Р+С<С'РёР№
+		# Р?РёС?С?РёРё в?" РёС: Р?Рч Р?Р?РёР?Р°РчР?. Р?С?С'Р°Р>С?Р?Р?Р№ С?РчРєР?РёР·РёС' С?С'Р°Р?РёР? Р? Р?С'РєС?С<С'С?С? РєР>РчС'РєС?:
+		# С?С'Р°С?С<Рч 2D-РєР?Р?С?Р?РёР?Р°С'С< С╪Р°С?С'Р? РїР?РїР°Р?Р°С?С' С?Р?Р?Р?Р? Р?Р° Р?С?Р°Р?С? С?С'РчР?С<.
+		if type in ["banner", "chain", "cell_door", "gate", "lever", "stairs"]:
+			_prop(type, pos)
+		else:
+			_prop(type, _floor_safe(pos, _prop_clearance(type)))
+
+
+func _process(delta: float) -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	for ripple_entry in water_ripples:
+		var phase := fposmod(t * 0.22 + float(ripple_entry["seed"]), 1.0)
+		var ripple: MeshInstance3D = ripple_entry["mesh"]
+		var ripple_mat: StandardMaterial3D = ripple_entry["material"]
+		ripple.scale = Vector3(0.45 + phase * 1.05, 1.0, 0.38 + phase * 0.82)
+		var ripple_color := ripple_mat.albedo_color
+		ripple_color.a = (1.0 - phase) * 0.32
+		ripple_mat.albedo_color = ripple_color
+	for l in lights:
+		var s: float = l["seed"]
+		var base: float = l["base"]
+		l["light"].light_energy = base * (0.86 + 0.1 * sin(t * 7.1 + s) + 0.06 * sin(t * 17.3 + s * 2.0))
+	for f in flames:
+		if is_instance_valid(f):
+			var s2: float = float(f.get_instance_id() % 100) / 13.0
+			f.scale = Vector3(1.0, 1.05 + 0.18 * sin(t * 9.0 + s2), 1.0)
+	# С'РчР?Рё С'Р?Р>С?РєР? С? Р+Р>РёРР°Р№С?РёС: РёС?С'Р?С╪Р?РёРєР?Р? в?" С?РєР?Р?Р?Р?РёС? GPU
+	shadow_t += delta
+	if shadow_t > 0.3:
+		shadow_t = 0.0
+		var player := get_tree().get_first_node_in_group("player")
+		var center := Vector3.ZERO
+		if player != null:
+			center = player.global_position
+		var ranked: Array = []
+		for l in lights:
+			var li: OmniLight3D = l["light"]
+			if not is_instance_valid(li):
+				continue
+			ranked.append({"l": li, "d": _light_world_position(li).distance_to(center)})
+		ranked.sort_custom(func(a, b): return a["d"] < b["d"])
+		for i in ranked.size():
+			ranked[i]["l"].shadow_enabled = i < 4 and ranked[i]["d"] < 15.0
+
+
+## Р?Р°С?С'РчР?Р?С<Р№ С"Р°РєРчР>: РєС?Р?Р?С?С'РчР№Р? Рё С╪Р°С?Р° РїС?РёР?РёС'РёР?Р°Р?Рё, РїР>Р°Р?С? Рё С?Р?РчС' Р? Р·Р°Р>.
+func _wall_torch(open_cell: Vector2i, d: Vector2i, shadows := false) -> bool:
+	var wall_cell := open_cell + d
+	var face_dir := Vector2i(-d.x, -d.y)
+	var xf := _face_xform([wall_cell], face_dir)
+	var anchor := {
+		"pos": xf.origin + xf.basis.z * FACE_Z + Vector3(0.0, 1.72, 0.0),
+		"normal": -xf.basis.z,
+	}
+	var root := _wall_root(anchor)
+	_box(Vector3(0.28, 0.46, 0.08), Vector3(0.0, 0.22, 0.04), mat_metal, root)
+	_box(Vector3(0.08, 0.08, 0.28), Vector3(0.0, 0.38, 0.18), mat_metal, root)
+	_cyl(0.055, 0.54, Vector3(0.0, 0.72, 0.3), mat_wood, root)
+	_cyl(0.17, 0.12, Vector3(0.0, 1.04, 0.3), mat_metal, root)
+	var flame := Node3D.new()
+	flame.position = Vector3(0.0, 1.12, 0.3)
+	root.add_child(flame)
+	var outer := MeshInstance3D.new()
+	var fmesh := CylinderMesh.new()
+	fmesh.top_radius = 0.012
+	fmesh.bottom_radius = 0.1
+	fmesh.height = 0.36
+	fmesh.radial_segments = 7
+	outer.mesh = fmesh
+	outer.position = Vector3(0.0, 0.12, 0.0)
+	outer.material_override = mat_flame
+	outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	flame.add_child(outer)
+	var core := MeshInstance3D.new()
+	var cmesh := CylinderMesh.new()
+	cmesh.top_radius = 0.006
+	cmesh.bottom_radius = 0.05
+	cmesh.height = 0.2
+	cmesh.radial_segments = 6
+	core.mesh = cmesh
+	core.position = Vector3(0.0, 0.04, 0.0)
+	core.material_override = mat_flame_core
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	flame.add_child(core)
+	flames.append(flame)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.76, 0.54)
+	light.light_energy = 3.1
+	light.omni_range = 10.0
+	light.omni_attenuation = 1.0
+	light.shadow_enabled = shadows
+	light.position = Vector3(0.0, 1.42, 0.3)
+	root.add_child(light)
+	lights.append({"light": light, "base": 3.1, "seed": randf() * 10.0})
+	return true
+
+
+## Р?Р°С?С'РчР?Р?С<Р№ С"Р°РєРчР> С? Р+Р>РёРР°Р№С?РчР№ Р?С?Р°Р?Рё С?С'РчР?С<. РС?Р>Рё С?С'РчР?С< С?С?Р?Р?Р? Р?РчС' в?" false,
+## Рё Р?С<Р·С<Р?Р°С?С%РёР№ С?С'Р°Р?РёС' Р?Р°РїР?Р>С?Р?С<Р№.
+func _wall_torch_near(pos: Vector3) -> bool:
+	var c := _nearest_open_cell(pos)
+	var best := INF
+	var best_d := Vector2i.ZERO
+	for d in SIDES:
+		if not _wall_at(c, d):
+			continue
+		var p := cell_center(c.x, c.y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+		var dd := p.distance_squared_to(pos)
+		if dd < best:
+			best = dd
+			best_d = d
+	if best_d == Vector2i.ZERO:
+		return false
+	return _wall_torch(c, best_d)
+
+
+func _scatter_torches(max_count: int = 4) -> void:
+	"""РЎС'Р°Р?РёС' С"Р°РєРчР>С< Р?Р° С?С'РчР?С<, С╪С'Р?Р+С< РєР?С?РёР?Р?С?С< Р?Рч Р+С<Р>Рё С╪С'С?Р?С<Р?Рё."""
+	var placed := 0
+	var step := 7
+	for y in map_h:
+		for x in map_w:
+			if placed >= max_count:
+				return
+			if grid[y][x]:
+				continue
+			var d := Vector2i.ZERO
+			if y > 0 and grid[y - 1][x]:
+				d = Vector2i(0, -1)
+			elif y < map_h - 1 and grid[y + 1][x]:
+				d = Vector2i(0, 1)
+			elif x > 0 and grid[y][x - 1]:
+				d = Vector2i(-1, 0)
+			elif x < map_w - 1 and grid[y][x + 1]:
+				d = Vector2i(1, 0)
+			if d == Vector2i.ZERO:
+				continue
+			if (x * 5 + y * 11) % step != 0:
+				continue
+			var pos := cell_center(x, y) + Vector3(d.x, 0.0, d.y) * (T * 0.5)
+			if _light_near(pos + Vector3(0.0, 1.4, 0.0), 2.6):
+				continue
+			# С? Р?РчРєР?С?Р°С'РёР?Р?С<С: С"Р°РєРчР>Р?Р? С'РчР?Рё Р?С'РєР>С?С╪Р°РчР?: РёР?Р°С╪Рч С'РчР?РчР?Р?Р№ Р°С'Р>Р°С?
+			# РїРчС?РчРїР?Р>Р?С?РчС'С?С? Рё С?Р?РчС' РїС?Р?РїР°Р?Р°РчС'
+			_wall_torch(Vector2i(x, y), d, false)
+			placed += 1
+
+
+func _dress_rooms() -> void:
+	var spots := {
+		"shelf": [Vector3(20, 0, 60), Vector3(60, 0, 52), Vector3(96, 0, 40),
+			Vector3(144, 0, 30), Vector3(92, 0, 82)],
+		"bed": [Vector3(24, 0, 62), Vector3(100, 0, 36), Vector3(88, 0, 30),
+			Vector3(118, 0, 82)],
+		"rubble": [Vector3(34, 0, 58), Vector3(70, 0, 50), Vector3(50, 0, 40),
+			Vector3(104, 0, 46), Vector3(124, 0, 40), Vector3(84, 0, 78)],
+		"rack": [Vector3(30, 0, 50), Vector3(86, 0, 34), Vector3(45, 0, 28),
+			Vector3(126, 0, 40), Vector3(82, 0, 80)],
+		# РЎС'Р°С?С'Р?Р?Р°С? РєР°Р?РчС?Р°: Р?Р?РёР? С'С'РїР>С<Р№ РєР>С?С╪ С? С?РчС?С'С'РєРё, РёР?Р°С╪Рч РїРчС?Р?С<Р№ РєР°Р?С?
+		# Р?С?С'Р°С'С'С?С? С'С'Р?Р?С<Р? РїС?С'Р?Р?Р? Р+РчР· С╪РёС'Р°РчР?Р?Р?Р? С?РёР>С?С?С'Р°.
+		"brazier_stand": [Vector3(9, 0, 54)],
+		"pillar": [Vector3(38, 0, 54), Vector3(66, 0, 48), Vector3(78, 0, 42),
+			Vector3(126, 0, 32), Vector3(92, 0, 72), Vector3(116, 0, 76)],
+		"arch": [Vector3(48, 0, 50), Vector3(58, 0, 44)],
+		"puddle": [Vector3(15, 0, 59), Vector3(48, 0, 47),
+			Vector3(72, 0, 55), Vector3(106, 0, 33), Vector3(98, 0, 42)],
+	}
+	for kind in spots.keys():
+		for pos in spots[kind]:
+			if kind == "arch":
+				_prop(kind, pos)
+			elif kind == "puddle":
+				_prop(kind, _floor_safe(pos, 0.12))
+			else:
+				_prop(kind, _floor_safe(pos, _prop_clearance(kind)))

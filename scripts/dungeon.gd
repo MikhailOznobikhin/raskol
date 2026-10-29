@@ -18,6 +18,14 @@ const ARCH_HALF := 0.72
 const ARCH_JAMB := 0.28
 ## Выше этой высоты проём арочного модуля перекрыт кладкой.
 const ARCH_TOP := 3.0
+## Свод-гусёк: стена переходит в потолок по дуге этого радиуса (м).
+const COVE_R := 1.0
+## Сегментов на дугу гусёкa: 6 — хватает, чтобы кривизна не читалась гранёной.
+const COVE_SEG := 6
+## Смещение модуля стены набора: у него начало координат — линия гребня свода,
+## а лицевая кладка на 1.901 м глубже. Сдвигаем модуль в зал, чтобы кирпич
+## встал на плоскость грани, а свод ушёл в комнату на этот же метр с лишним.
+const WALL_SHIFT := -1.901
 
 var lines: Array = []
 var map_w := 0
@@ -51,7 +59,9 @@ var mat_puddle_water: StandardMaterial3D
 var mat_banner: StandardMaterial3D
 ## Светлый тёсаный камень: плинт и карниз.
 var mat_cap: ShaderMaterial
-## Кирпич набора: потолок, ступени и заливка пустот за кладкой.
+## Свод и потолок: кладка пака по метрическим UV, без трипланара.
+var mat_vault: StandardMaterial3D
+## Кирпич набора: ступени и заливка пустот за кладкой.
 var mat_brick: StandardMaterial3D
 var lights: Array = []
 var flames: Array = []
@@ -64,6 +74,10 @@ var water_ripples: Array[Dictionary] = []
 ## Модули набора: имя → Mesh, и материалы glTF (albedo+normal+roughness).
 var kit: Dictionary = {}
 var kit_ok := false
+## Клетки проёмов: на их гранях свод не строится — плечо даёт сам модуль.
+var _arch_open := {}
+## Материалы стволов колонн: ключ — округлённые (радиус, высота).
+var _pier_mats := {}
 ## Материал заплаток земли с приглушённым альбедо (см. _dirt_material).
 var _mat_dirt: Material = null
 
@@ -116,6 +130,37 @@ func _load_kit() -> void:
 	kit_ok = kit.has("wall_4m") and kit.has("wall_2m") and kit.has("floor_4m")
 	if not kit_ok:
 		push_warning("в наборе dungeon_kit нет нужных модулей")
+	_fix_kit_uv()
+
+
+## Тексельная плотность модулей набора. Атлас пака (2048 px) покрывает у арки
+## 15 м, у плиты пола — 5.9 м, то есть 134 и 346 px/м рядом со стенами на
+## 512 px/м. Правим множитель UV на самом меше: он общий для всех экземпляров.
+func _fix_kit_uv() -> void:
+	for name in ["floor_4m"]:
+		_scale_surface_uv(kit.get(name), 512.0 / 346.0)
+	for name in ["arch_2m", "arch_2m_b"]:
+		_scale_surface_uv(kit.get(name), 512.0 / 134.0)
+	# Стены набора: 140 px/м в исходных UV — кирпич был в 3.7 раза крупнее
+	# кирпича проёма и не совпадал с потолком.
+	for name in ["wall_4m", "wall_4m_b", "wall_2m", "wall_2m_b"]:
+		_scale_surface_uv(kit.get(name), 512.0 / 140.0)
+
+
+func _scale_surface_uv(mesh: Mesh, factor: float) -> void:
+	if mesh == null:
+		return
+	for i in mesh.get_surface_count():
+		var src: Material = mesh.surface_get_material(i)
+		if src is not StandardMaterial3D:
+			continue
+		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
+		m.uv1_scale = m.uv1_scale * factor
+		# В glTF пак помечен двусторонним: изнанка кладки и свода видна как
+		# гладкая плита и пробивается сквозь соседние стены. С отсечением
+		# задних граней сквозь неё видна кирпичная коробка тела стены.
+		m.cull_mode = BaseMaterial3D.CULL_BACK
+		mesh.surface_set_material(i, m)
 
 
 
@@ -171,6 +216,15 @@ func _kit_tex(name: String) -> Texture2D:
 	return load(path)
 
 
+## Кирпич по UV меша, без трипланара: нужен своду, где кладка должна идти по
+## дуге, а не проецироваться сверху. COLOR вершин даёт потоновый разброс.
+func _brick_material_uv(uv: float) -> StandardMaterial3D:
+	var m := _brick_material(uv)
+	m.uv1_triplanar = false
+	m.vertex_color_use_as_albedo = true
+	return m
+
+
 ## Материал процедурного потолка и ступеней из атласа набора.
 func _brick_material(uv: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -196,6 +250,9 @@ func _brick_material(uv: float) -> StandardMaterial3D:
 	m.metallic_specular = 0.4
 	m.uv1_scale = Vector3(uv, uv, uv)
 	m.uv1_triplanar = true
+	# Встроенный трипланар по умолчанию в локальных координатах: у блоков
+	# стены базис растянут по Y, и кирпич ехал вертикальными полосами.
+	m.uv1_world_triplanar = true
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return m
 
@@ -246,15 +303,21 @@ func _materials() -> void:
 		push_warning("НЕТ ТЕКСТУР tex3d — стены будут плоскими")
 	# Этап A: у пола, стен, свода и трима разные роли. Холодный пол, тёплый
 	# камень стен и копчёный свод дают иерархию, которой не было у одного tint.
-	mat_floor = _make_stone("stone_floor", Color(0.87, 0.86, 0.85), 0.68, 0.45, 1.3)
-	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.4, 1.5)
-	# Кирпич набора на потолок и реквизит: атлас Brick_Walls без тинта, как у
-	# кладки модулей, — свод сливается со стенами по цвету.
-	mat_brick = _brick_material(1.0)
-	mat_ceil = mat_brick
+	# Плотность всех каменных поверхностей сведена к ~512 px/м (текстура
+	# stone_wall 1024 px → плитка 2 м): разброс по уровню был 15×, из-за него
+	# кирпич двери был в 11 раз крупнее кирпича соседней стены.
+	mat_floor = _make_stone("stone_floor", Color(0.87, 0.86, 0.85), 0.68, 0.5, 1.3)
+	mat_wall = _make_stone("stone_wall", Color(0.9, 0.86, 0.81), 0.9, 0.5, 1.5)
+	# Кирпич набора: ступени, заливка пустот. Атлас 2048 px на 4 м = 512 px/м.
+	mat_brick = _brick_material(0.25)
+	# Потолок и свод — та же кладка пака, что у стен (атлас Brick_Walls
+	# 2048 px, 0.25 uv/м = 512 px/м). Раньше потолок брал stone_wall и в кадре
+	# читался отдельной плиткой, не связанной ни со стенами, ни с гусёком.
+	mat_vault = _brick_material_uv(0.25)
+	mat_ceil = mat_vault
 	# Тёсаный камень ступеней и порталов. Прежний почти белый тинт в кадре
 	# читался светящимся пластиком рядом с кладкой набора.
-	mat_cap = _make_stone("stone_wall", Color(0.66, 0.6, 0.54), 0.85, 0.9, 1.1)
+	mat_cap = _make_stone("stone_wall", Color(0.66, 0.6, 0.54), 0.85, 0.5, 1.1)
 	mat_metal = _make_mat("metal", Color(0.8, 0.82, 0.9), 0.45, 0.85, 1.2)
 	mat_wood = _make_mat("wood", Color(0.9, 0.85, 0.8), 0.8, 0.0, 1.0)
 	mat_dark = StandardMaterial3D.new()
@@ -543,7 +606,9 @@ func _dirt_material() -> Material:
 	var src: Material = mesh.surface_get_material(0)
 	if src is StandardMaterial3D:
 		var m: StandardMaterial3D = (src as StandardMaterial3D).duplicate()
-		m.albedo_color = Color(0.34, 0.3, 0.26)
+		# Пол стал светлее после приведения плотности: прежний тёмный тинт
+		# превращал заплатку в чёрную дыру, а не в сырую землю.
+		m.albedo_color = Color(0.52, 0.47, 0.4)
 		_mat_dirt = m
 	else:
 		_mat_dirt = src
@@ -659,6 +724,10 @@ func _build_ceiling() -> void:
 					var p := Vector3(c.x * T, _ceil_corner_h(c.x, c.y), c.y * T)
 					st.set_color(Color(0.95, 0.92, 0.86))
 					st.set_normal(_ceil_corner_normal(c.x, c.y))
+					# UV в метрах по плану: материал умножает на 0.25 uv/м, и кладка
+					# на потолке идёт с той же плотностью 512 px/м, что на стенах и
+					# гусёке, — ряды продолжаются с гусёка без смены масштаба.
+					st.set_uv(Vector2(p.x, p.z))
 					st.add_vertex(p)
 					index_of[c] = count
 					count += 1
@@ -678,6 +747,106 @@ func _build_ceiling() -> void:
 	mi.material_override = mat_ceil
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+
+
+## Свод-гусёк: стена переходит в потолок по дуге радиуса COVE_R. Лента по
+## каждой обнажённой грани, UV метрические (u — вдоль стены, v — длина дуги),
+## поэтому кладка идёт по кривой с той же плотностью 512 px/м, что и стена,
+## и не растягивается в месте изгиба.
+func _build_cove() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var y0 := WALL_H - COVE_R
+	var faces := 0
+	# Индексы в SurfaceTool отсчитываются от порядка добавления вершин.
+	var vcount := 0
+	for y in map_h:
+		for x in map_w:
+			if not grid[y][x] or pier[y][x]:
+				continue
+			for d in SIDES:
+				if not _open_in(x, y, d):
+					continue
+				# Проём закрыт модулем набора: его плечо уже даёт переход в стену.
+				if _arch_open.has(Vector2i(x + d.x, y + d.y)):
+					continue
+				_cove_strip(st, _face_xform([Vector2i(x, y)], d), d, y0,
+					_cell_hash(x, y, 51), vcount)
+				vcount += (COVE_SEG + 1) * 2
+				faces += 1
+	if faces == 0:
+		return
+	st.generate_tangents()
+	var mesh: ArrayMesh = st.commit()
+	if mesh == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "VaultCove"
+	mi.mesh = mesh
+	mi.material_override = mat_vault
+	add_child(mi)
+	print("COVE faces=", faces, " tris=", faces * COVE_SEG * 2)
+
+
+## Одна грань стены: COVE_SEG квадов от стены до плоскости потолка. Нормаль
+## смотрит в зал и вниз, поверхность вогнутая — как у настоящего гуська.
+func _cove_strip(st: SurfaceTool, xf: Transform3D, d: Vector2i, y0: float,
+		shade_hash: int, first: int) -> void:
+	var along := xf.basis.x
+	var inward := Vector3(d.x, 0.0, d.y)
+	var shade := 0.88 + float(shade_hash % 9) * 0.011
+	var col := Color(shade, shade * 0.99, shade * 0.955)
+	var u0 := xf.origin.dot(along)
+	for i in COVE_SEG + 1:
+		var ang: float = float(i) / float(COVE_SEG) * PI * 0.5
+		var base: Vector3 = xf.origin + inward * (COVE_R * (1.0 - cos(ang))) \
+			+ Vector3.UP * (y0 + COVE_R * sin(ang))
+		var n: Vector3 = (inward * cos(ang) - Vector3.UP * sin(ang)).normalized()
+		var v: float = COVE_R * ang
+		st.set_normal(n)
+		st.set_color(col)
+		st.set_uv(Vector2(u0 - T * 0.5, v))
+		st.add_vertex(base - along * (T * 0.5))
+		st.set_normal(n)
+		st.set_color(col)
+		st.set_uv(Vector2(u0 + T * 0.5, v))
+		st.add_vertex(base + along * (T * 0.5))
+	for i in COVE_SEG:
+		var a := first + i * 2
+		var b := a + 1
+		var c := a + 2
+		var e := a + 3
+		# Godot считает лицевой грань с обходом по часовой стрелке (нормаль —
+		# минус векторное произведение), поэтому обход обратный математическому.
+		st.add_index(a)
+		st.add_index(b)
+		st.add_index(e)
+		st.add_index(a)
+		st.add_index(e)
+		st.add_index(c)
+
+
+## Материал ствола колонны: кирпич набора, как у стен, но по цилиндрической
+## развёртке CylinderMesh (u 0…1 по обводу, v 0…1 по высоте). World-трипланар
+## на цилиндре смешивал две проекции и гнал курсы кладки веером.
+func _column_material(r: float, h: float) -> StandardMaterial3D:
+	var key := Vector2i(int(round(r * 100.0)), int(round(h * 100.0)))
+	if _pier_mats.has(key):
+		return _pier_mats[key]
+	var m: StandardMaterial3D = null
+	var wall_mesh: Mesh = kit.get("wall_2m")
+	if wall_mesh != null and wall_mesh.get_surface_count() > 0:
+		var src: Material = wall_mesh.surface_get_material(0)
+		if src is StandardMaterial3D:
+			m = (src as StandardMaterial3D).duplicate()
+	if m == null:
+		m = _brick_material_uv(0.25)
+	m.uv1_triplanar = false
+	m.vertex_color_use_as_albedo = false
+	# 2048 px на 4 м: 0.25 uv/м ≈ 512 px/м, как у стен и потолка.
+	m.uv1_scale = Vector3(TAU * r * 0.25, h * 0.25, 1.0)
+	_pier_mats[key] = m
+	return m
 
 
 func _build_ribs() -> void:
@@ -745,10 +914,59 @@ func _face_xform(pair: Array, d: Vector2i) -> Transform3D:
 	return Transform3D(_face_basis(d), mid / float(pair.size()))
 
 
-## Прямые стены строятся из блоков карты; модульные арки остаются только
-## в выделенных проёмах, а не формируют профиль всего периметра комнаты.
+## Стены: кирпичный массив-коробка (тело стены) + обшивка модулями набора на
+## каждой обнажённой грани. Модуль набора — тонкая скорлупа (кладка и свод),
+## у неё нет боковых стенок, поэтому сама по себе она даёт дыры на косых углах.
+## Коробка закрывает эти дыры, а модуль даёт кладку и свод к потолку.
 func _build_walls() -> void:
 	_build_walls_plain()
+	if kit_ok and kit.has("wall_2m"):
+		_build_wall_veneer()
+	else:
+		_build_cove()
+
+
+## Обшивка: одна обнажённая грань — один модуль 2 м. Через MultiMesh: 466
+## граней — это два draw call вместо четырёх сотен.
+func _build_wall_veneer() -> void:
+	var straight: Array[Transform3D] = []
+	var mirrored: Array[Transform3D] = []
+	for y in map_h:
+		for x in map_w:
+			if not grid[y][x] or pier[y][x]:
+				continue
+			var c := Vector2i(x, y)
+			for d in SIDES:
+				if not _open_in(x, y, d):
+					continue
+				var xf := _face_xform([c], d)
+				# BASIS.z смотрит в толщу стены: сдвигаем обшивку в зал так, чтобы
+				# кладка легла на плоскость грани (и на полсантиметра вперёд, чтобы
+				# не мерцать с гранью коробки).
+				xf.origin += xf.basis.z * (WALL_SHIFT + 0.005)
+				if _cell_hash(x, y, 7) % 2 == 0:
+					straight.append(xf)
+				else:
+					mirrored.append(xf)
+	_kit_multimesh("wall_2m", straight)
+	_kit_multimesh("wall_2m_b", mirrored)
+	print("WALLS veneer straight=", straight.size(), " mirrored=", mirrored.size())
+
+
+func _kit_multimesh(mesh_name: String, xforms: Array[Transform3D]) -> void:
+	var mesh: Mesh = kit.get(mesh_name)
+	if mesh == null or xforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Walls_" + mesh_name
+	mmi.multimesh = mm
+	add_child(mmi)
 
 
 ## Прямоугольные стеновые блоки с процедурным PBR-материалом.
@@ -760,7 +978,9 @@ func _build_walls_plain() -> void:
 				cells.append(Vector2i(x, y))
 	var box := BoxMesh.new()
 	box.size = Vector3(T, 1.0, T)
-	var mmi := _multimesh(box, cells.size(), mat_wall)
+	# Кирпич набора, а не серый камень: коробка — тело стены под обшивкой и
+	# видна только на косых углах и из-за кромки свода.
+	var mmi := _multimesh(box, cells.size(), mat_brick)
 	for i in cells.size():
 		var c := cells[i]
 		var h: float = wtop[c.y][c.x]
@@ -796,6 +1016,7 @@ func _build_arches() -> void:
 			var flip: bool = _cell_hash(x, y, 29) % 2 == 0
 			_kit_place("arch_2m", _face_xform([c], d), true, flip)
 			arches.append({"cell": c, "d": d})
+			_arch_open[c] = true
 	print("ARCHES kit=", arches.size())
 
 
@@ -811,12 +1032,14 @@ func _build_piers() -> void:
 		var cap_h := 0.28
 		var shaft_h: float = top - base_h - cap_h
 		var footprint: float = radius * 2.12
+		# Плинт и капитель — тот же кирпич набора, что у стен и ствола: серый
+		# камень рядом с кладкой читался чужой вставкой.
 		_box(Vector3(footprint, base_h + 0.07, footprint),
-			center + Vector3(0, base_h * 0.5 - 0.015, 0), mat_wall)
+			center + Vector3(0, base_h * 0.5 - 0.015, 0), mat_brick)
 		_cyl(radius, shaft_h,
-			center + Vector3(0, base_h + shaft_h * 0.5, 0), mat_wall)
+			center + Vector3(0, base_h + shaft_h * 0.5, 0), _column_material(radius, shaft_h))
 		_box(Vector3(footprint * 1.06, cap_h, footprint * 1.06),
-			center + Vector3(0, top - cap_h * 0.5, 0), mat_wall)
+			center + Vector3(0, top - cap_h * 0.5, 0), mat_brick)
 	print("PIERS cylinders=", piers.size())
 
 
@@ -1094,7 +1317,8 @@ func _add_grime_decals() -> void:
 			continue
 		var n: Vector3 = wall["normal"]
 		var p: Vector3 = wall["pos"] + n * 0.05
-		p.y = clampf(light_pos.y + 0.75, 2.2, WALL_H + 0.6)
+		# Копоть не заходит на свод: декаль выше начала гусёкa висела бы в воздухе.
+		p.y = clampf(light_pos.y + 0.55, 2.2, WALL_H - COVE_R - 0.55)
 		_decal(p, n, Vector3(2.4, 0.7, 2.2), soot, Color(1, 1, 1, 0.8))
 		soot_n += 1
 
@@ -1659,9 +1883,21 @@ func _arched_doorway(pos: Vector3) -> void:
 		_box(Vector3(0.4, 3.0, 0.6), Vector3(1.2, 1.5, 0), mat_wall, aroot)
 		_box(Vector3(2.8, 0.5, 0.6), Vector3(0, 2.75, 0), mat_wall, aroot)
 		return
+	# Модуль ставится лицевой кладкой в плоскость ближайшей стены, а не мировым
+	# сдвигом по Z: на стене вдоль X такой сдвиг уводил проём в кладку, а сама
+	# арка оказывалась повёрнутой на 90° к стене и видна под скользящим углом.
 	var c := _nearest_open_cell(pos)
+	var anchor := _nearest_wall_anchor(pos)
 	var root := Node3D.new()
-	root.position = cell_center(c.x, c.y) + Vector3(0.0, 0.0, -1.07)
+	if anchor.is_empty():
+		root.position = cell_center(c.x, c.y)
+	else:
+		var n: Vector3 = anchor["normal"]
+		root.transform = Transform3D(
+			Basis(-Vector3.UP.cross(n).normalized(), Vector3.UP, -n),
+			anchor["pos"])
+	# Гусёк по этой грани не строится: плечо даёт сам модуль.
+	_arch_open[c] = true
 	add_child(root)
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
