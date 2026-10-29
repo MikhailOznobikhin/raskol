@@ -531,6 +531,37 @@ func _count_lights(node: Node) -> int:
 	return count
 
 
+func _ray_hits_dungeon_boundary(space: PhysicsDirectSpaceState3D,
+		from: Vector3, to: Vector3) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
+	var hit := space.intersect_ray(query)
+	var collider: Variant = hit.get("collider")
+	return collider is StaticBody3D and collider.is_in_group("dungeon_boundary")
+
+
+func _test_dungeon_boundary(dungeon: Dungeon) -> bool:
+	var space := dungeon.get_world_3d().direct_space_state
+	var width := float(dungeon.map_w) * Dungeon.T
+	var depth := float(dungeon.map_h) * Dungeon.T
+	var x_mid := width * 0.5
+	var z_mid := depth * 0.5
+	var probes: Array[Vector3] = [
+		Vector3(-1.0, 1.0, z_mid), Vector3(1.0, 1.0, z_mid),
+		Vector3(width + 1.0, 1.0, z_mid), Vector3(width - 1.0, 1.0, z_mid),
+		Vector3(x_mid, 1.0, -1.0), Vector3(x_mid, 1.0, 1.0),
+		Vector3(x_mid, 1.0, depth + 1.0), Vector3(x_mid, 1.0, depth - 1.0),
+		Vector3(-1.0, 1.0, -1.0), Vector3(1.0, 1.0, 1.0),
+		Vector3(width + 1.0, 1.0, -1.0), Vector3(width - 1.0, 1.0, 1.0),
+		Vector3(-1.0, 1.0, depth + 1.0), Vector3(1.0, 1.0, depth - 1.0),
+		Vector3(width + 1.0, 1.0, depth + 1.0),
+		Vector3(width - 1.0, 1.0, depth - 1.0),
+	]
+	for i in range(0, probes.size(), 2):
+		if not _ray_hits_dungeon_boundary(space, probes[i], probes[i + 1]):
+			return false
+	return true
+
+
 func _test_mode() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	start_mission()
@@ -545,6 +576,13 @@ func _test_mode() -> void:
 	m.hero.control_enabled = false
 	print("TEST start magic=", GameState.magic, " hp=", GameState.health,
 		" enemies=", m.enemies.size(), " fleshes=", m.fleshes.size())
+	await get_tree().physics_frame
+	var boundary_collision := _test_dungeon_boundary(m.dungeon)
+	print("TEST dungeon boundary collisions=", boundary_collision)
+	if not boundary_collision:
+		print("TEST FAIL: внешний контур подземелья не закрыт коллизиями")
+		get_tree().quit()
+		return
 
 	var branch_path: Array[Vector2i] = []
 	for x in range(3, 13):
